@@ -3,16 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Wahrwelt - Карта маршрутов</title>
-    <link rel="stylesheet" href="/styles.css?v=b3ee7ea14898">
-    <script src="/app.js?v=6bfc066c5405" defer></script>
+    <title>Wahrwelt</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="/styles.css?v=d0eeb33f245a">
+    <script src="/app.js?v=2178437e12a6" defer></script>
   </head>
   <body class="map-page">
     <p id="startup-status" class="startup-status" role="status">Загрузка сервиса. Если страница не открывается, <a href="/?reload=1">обновите ее</a> или <a href="/login">войдите заново</a>.</p>
     <div id="app-shell" class="map-app" hidden>
       <header class="map-topbar">
         <a class="map-brand" href="/" aria-label="Wahrwelt">
-          <img class="brand-logo map-brand-logo" src="/logo.jpg" width="58" height="48" alt="">
+          <img class="brand-logo map-brand-logo" src="/logo.jpg" width="60" height="48" alt="">
           <span><strong>Wahrwelt</strong></span>
         </a>
         <div class="map-account">
@@ -21,88 +22,95 @@
         </div>
       </header>
 
-      <main id="route-network" class="full-map" aria-label="Карта маршрутов между пятью городами">
+      <main id="route-network" class="full-map" aria-label="Грузовые коридоры из Орла в соседние города">
         <div class="map-title">
           <h1>Хабы снабжения</h1>
         </div>
 
-        <svg class="route-lines" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
+        <svg class="route-lines route-lines-desktop" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
           <path class="route-line" data-route-line="kaluga" d="M500 300C390 235 295 176 185 130"/>
           <path class="route-line" data-route-line="tula" d="M500 300C604 215 680 176 770 145"/>
           <path class="route-line" data-route-line="kursk" d="M500 300C530 374 543 430 560 490"/>
           <path class="route-line active" data-route-line="voronezh" d="M500 300C625 326 739 370 850 410"/>
         </svg>
+        <svg class="route-lines route-lines-mobile" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+          <path class="route-line" data-route-line="kaluga" d="M500 320C420 350 345 405 260 470"/>
+          <path class="route-line" data-route-line="tula" d="M500 320C580 350 655 405 740 470"/>
+          <path class="route-line" data-route-line="kursk" d="M500 320C420 410 345 515 260 610"/>
+          <path class="route-line active" data-route-line="voronezh" d="M500 320C580 410 655 515 740 610"/>
+        </svg>
 
-        <div class="city-node city-orel home-city" aria-label="Орел, центральный узел">
-          <span class="city-dot"><b>W</b></span><strong>Орел</strong><small>центральный узел</small>
+        <div class="city-node city-orel home-city" aria-label="Орёл, логистический узел">
+          <span class="city-dot"><b>W</b></span><strong>Орёл</strong><small>узел поставок</small>
         </div>
         <button class="city-node city-kaluga" type="button" data-route="kaluga" data-city="Калуга">
-          <span class="city-dot"></span><strong>Калуга</strong><small>западный тракт</small>
+          <span class="city-dot"></span><strong>Калуга</strong><small>западный коридор</small>
         </button>
         <button class="city-node city-tula" type="button" data-route="tula" data-city="Тула">
-          <span class="city-dot"></span><strong>Тула</strong><small>северный тракт</small>
+          <span class="city-dot"></span><strong>Тула</strong><small>северный коридор</small>
         </button>
         <button class="city-node city-kursk" type="button" data-route="kursk" data-city="Курск">
-          <span class="city-dot"></span><strong>Курск</strong><small>южный тракт</small>
+          <span class="city-dot"></span><strong>Курск</strong><small>южный коридор</small>
         </button>
         <button class="city-node city-voronezh active" type="button" data-route="voronezh" data-city="Воронеж">
-          <span class="city-dot"></span><strong>Воронеж</strong><small>восточный тракт</small>
+          <span class="city-dot"></span><strong>Воронеж</strong><small>восточный коридор</small>
         </button>
 
         <section class="document-pin" aria-labelledby="document-pin-heading">
           <div class="document-pin-heading">
-            <div><p class="eyebrow">Документы</p><h2 id="document-pin-heading">Маршрутное дело</h2></div>
+            <div><p class="eyebrow">Текущая поставка</p><h2 id="document-pin-heading">Дело маршрута</h2></div>
             <span id="flow-progress">Шаг 1 из 3</span>
           </div>
-          <p id="document-route" class="document-route">Орел -> Воронеж</p>
+          <p id="document-route" class="document-route">Орёл -> Воронеж</p>
           <div class="document-pin-state">
             <span class="active"><b>01</b>Дело</span>
-            <span><b>02</b>Участники</span>
+            <span><b>02</b>Назначения</span>
             <span><b>03</b>Код</span>
           </div>
           <dl class="document-meta">
             <div><dt>Дело</dt><dd id="document-case">Не создано</dd></div>
-            <div><dt>Слот</dt><dd id="document-slot">Не назначен</dd></div>
+            <div><dt>Участники</dt><dd id="document-slot">Не назначены</dd></div>
           </dl>
-          <button id="open-documents" class="document-open" type="button">Оформить поставку <span>-&gt;</span></button>
+          <button id="open-documents" class="document-open" type="button">Открыть дело <span>-&gt;</span></button>
         </section>
 
-        <aside id="document-drawer" class="document-drawer" aria-label="Документы маршрута" aria-hidden="true" hidden>
+        <aside id="document-drawer" class="document-drawer" aria-label="Дело поставки" aria-hidden="true" hidden>
           <header class="drawer-header">
-            <div><h2>Оформить поставку</h2><p id="flow-summary" class="form-help">Создайте дело, назначьте участников и получите код.</p></div>
-            <button id="close-documents" class="drawer-close" type="button" aria-label="Закрыть документы">x</button>
+            <div><h2>Дело поставки</h2><p id="flow-summary" class="form-help">Создайте дело, назначьте участников и задайте код.</p></div>
+            <button id="close-documents" class="drawer-close" type="button" aria-label="Закрыть дело">x</button>
           </header>
 
           <nav class="document-tabs" aria-label="Этапы оформления">
             <button class="active" type="button" data-document-tab="case">1. Дело</button>
-            <button type="button" data-document-tab="slot" disabled>2. Участники</button>
+            <button type="button" data-document-tab="slot" disabled>2. Назначения</button>
             <button type="button" data-document-tab="approval" disabled>3. Код</button>
           </nav>
 
           <div class="drawer-content">
             <section class="document-pane" data-document-pane="case" aria-labelledby="case-heading">
-              <div class="pane-heading"><h3 id="case-heading">Куда везем?</h3><span>01</span></div>
+              <div class="pane-heading"><h3 id="case-heading">Маршрут поставки</h3><span>01</span></div>
               <form id="case-form" class="drawer-form">
-                <label>Тип дела
+                <label>Тип операции
                   <select name="kind" required>
-                    <option value="import">Ввоз</option>
-                    <option value="export">Вывоз</option>
-                    <option value="service">Услуги</option>
+                    <option value="import">Поставка</option>
+                    <option value="export">Обратный рейс</option>
+                    <option value="service">Сервисный рейс</option>
                   </select>
                 </label>
-                <label>Отправление<input name="origin" maxlength="120" value="Орел" required></label>
-                <label>Назначение<input name="destination" maxlength="120" value="Воронеж" required></label>
-                <button class="button" type="submit">Создать дело и продолжить</button>
+                <label>Откуда отправляем<input name="origin" maxlength="120" value="Орел" required></label>
+                <label>Куда доставляем<input name="destination" maxlength="120" value="Воронеж" required></label>
+                <p class="form-help">Учетная запись позволяет создать дело. Перевозчик и инспектор назначаются для каждой поставки отдельно.</p>
+                <button class="button" type="submit">Создать дело</button>
               </form>
-              <button class="text-button" id="continue-slot" type="button" hidden>Продолжить к участникам</button>
+              <button class="text-button" id="continue-slot" type="button" hidden>Продолжить к назначениям</button>
               <div id="case-result" class="result" hidden></div>
             </section>
 
             <section class="document-pane" data-document-pane="slot" aria-labelledby="slot-heading" hidden>
-              <div class="pane-heading"><h3 id="slot-heading">Кто участвует?</h3><span>02</span></div>
+              <div class="pane-heading"><h3 id="slot-heading">Назначить участников</h3><span>02</span></div>
               <form id="slot-form" class="drawer-form">
                 <input name="case_id" id="case-id" type="hidden">
-                <p class="form-help">Выберите двух разных пользователей. Только назначенный участник сможет согласовать свою часть маршрута.</p>
+                <p class="form-help">Выберите двух разных пользователей. Назначение перевозчика и инспектора действует только для этой поставки.</p>
                 <label>Перевозчик
                   <select name="carrier_username" id="carrier-select" required>
                     <option value="">Выберите перевозчика</option>
@@ -114,40 +122,54 @@
                   </select>
                 </label>
                 <label>Код поставки<input name="slot_code" autocomplete="off" maxlength="120" required aria-describedby="code-help"></label>
-                <p id="code-help" class="form-help">Придумайте код для этой поставки, например СКЛАД-24. Владелец дела может получить его сразу.</p>
-                <button class="button" type="submit">Сохранить участников и продолжить</button>
+                <p id="code-help" class="form-help">Создатель дела получает код сразу. Перевозчик и инспектор - после подтверждения маршрута.</p>
+                <button class="button" type="submit">Сохранить назначения</button>
               </form>
               <div id="slot-result" class="result" hidden></div>
             </section>
 
             <section class="document-pane" data-document-pane="approval" aria-labelledby="approval-heading" hidden>
-              <div class="pane-heading"><h3 id="approval-heading">Поставка оформлена</h3><span>03</span></div>
+              <div class="pane-heading"><h3 id="approval-heading">Участники назначены</h3><span>03</span></div>
               <p id="completion-summary" class="form-help"></p>
-              <button class="button" id="read-code-button" type="button">Показать код поставки</button>
+              <button class="button" id="read-code-button" type="button">Получить код поставки</button>
               <div id="code-result" class="result" hidden></div>
-              <p class="form-help">Вы владелец дела: согласования не нужны для просмотра вашего кода. Для участников код станет доступен после согласования маршрута.</p>
+              <section id="participant-links" class="participant-links" aria-labelledby="participant-links-heading" hidden>
+                <h4 id="participant-links-heading">Ссылки участникам</h4>
+                <p class="form-help">Передайте каждому участнику его ссылку. Сервис проверит аккаунт по назначению при подтверждении.</p>
+                <div class="participant-link">
+                  <label id="carrier-link-label" for="carrier-approval-link">Перевозчик</label>
+                  <div class="participant-link-row">
+                    <input id="carrier-approval-link" type="url" readonly>
+                    <button class="button button-secondary" type="button" data-copy-link="carrier-approval-link">Копировать</button>
+                  </div>
+                </div>
+                <div class="participant-link">
+                  <label id="inspector-link-label" for="inspector-approval-link">Инспектор</label>
+                  <div class="participant-link-row">
+                    <input id="inspector-approval-link" type="url" readonly>
+                    <button class="button button-secondary" type="button" data-copy-link="inspector-approval-link">Копировать</button>
+                  </div>
+                </div>
+                <p id="link-notice" class="link-notice" role="status" aria-live="polite"></p>
+              </section>
+              <p class="form-help">Создатель дела получает код сразу. Для назначенных перевозчика и инспектора он откроется после подтверждения маршрута.</p>
               <details class="approval-details">
-                <summary>Согласования участников</summary>
+                <summary>Подтверждение маршрута</summary>
                 <p id="approval-help" class="form-help"></p>
                 <form id="slot-action-form" class="drawer-form">
                   <input name="slot_id" id="slot-id" type="hidden">
-                  <label>Согласовать как
-                    <select name="role" id="approval-role">
-                      <option value="carrier">Перевозчик</option>
-                      <option value="inspector">Инспектор</option>
-                    </select>
-                  </label>
-                  <button class="button button-secondary" id="approve-button" type="submit">Согласовать свою часть</button>
+                  <input name="role" id="approval-role" type="hidden">
+                  <button class="button button-secondary" id="approve-button" type="submit">Подтвердить маршрут</button>
                 </form>
                 <div id="slot-action-result" class="result" hidden></div>
               </details>
               <details class="approval-details">
-                <summary>Номера документов</summary>
+                <summary>Идентификаторы дела и поставки</summary>
                 <p class="form-help" id="document-ids"></p>
               </details>
             </section>
 
-            <button class="button button-secondary new-case" id="new-case-button" type="button" hidden>Начать новую поставку</button>
+            <button class="button button-secondary new-case" id="new-case-button" type="button" hidden>Создать новое дело</button>
             <p id="notice" class="notice" role="status" aria-live="polite"></p>
           </div>
         </aside>

@@ -8,6 +8,20 @@ function showNotice(message, isError = false) {
   notice.classList.toggle("error", isError);
 }
 
+function afterLoginPath() {
+  const candidate = new URLSearchParams(window.location.search).get("return");
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/";
+  }
+  try {
+    const target = new URL(candidate, window.location.origin);
+    if (target.origin !== window.location.origin) return "/";
+    return target.pathname + target.search + target.hash;
+  } catch {
+    return "/";
+  }
+}
+
 async function request(path, options = {}) {
   const response = await fetch(path, {
     credentials: "same-origin",
@@ -55,7 +69,7 @@ form.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(values),
     });
-    window.location.replace("/");
+    window.location.replace(afterLoginPath());
   } catch (error) {
     showNotice(error.message, true);
     submitButton.disabled = false;

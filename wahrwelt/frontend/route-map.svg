@@ -1,16 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" fill="none">
   <defs>
     <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
-      <path d="M48 0H0V48" stroke="#8aa19d" stroke-opacity=".12" stroke-width="1"/>
+      <path d="M48 0H0V48" stroke="#698984" stroke-opacity=".15" stroke-width="1"/>
     </pattern>
     <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(600 390) rotate(90) scale(340 520)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#3b746b" stop-opacity=".22"/>
-      <stop offset="1" stop-color="#102a2e" stop-opacity="0"/>
+      <stop stop-color="#73b5a7" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#eaf0ee" stop-opacity="0"/>
     </radialGradient>
   </defs>
+  <rect width="1200" height="760" fill="#eaf0ee"/>
   <rect width="1200" height="760" fill="url(#grid)"/>
   <rect width="1200" height="760" fill="url(#glow)"/>
-  <g stroke="#78938e" stroke-opacity=".13">
+  <g stroke="#65847e" stroke-opacity=".16">
     <path d="M-60 188C102 121 226 244 365 176S625 101 793 180s280 18 469-56"/>
     <path d="M-43 255c139-54 241 25 375-8s258-103 413-49 274 126 499 24"/>
     <path d="M-70 361c164-82 310-37 430 14s262 43 379-1 280-26 527 80"/>
