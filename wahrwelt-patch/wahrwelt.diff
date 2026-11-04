@@ -1,0 +1,921 @@
+# V1 - IDOR редакции манифеста
+
+diff --git a/wahrwelt/backend/internal/usecase/manifest.go b/wahrwelt-patch/backend/internal/usecase/manifest.go
+index 668cda7..b0bd67c 100644
+--- a/wahrwelt/backend/internal/usecase/manifest.go
++++ b/wahrwelt-patch/backend/internal/usecase/manifest.go
+@@ -89,6 +89,10 @@ func (m *Manifest) Revision(ctx context.Context, actorID uuid.UUID, number strin
+ 	if err != nil {
+ 		return domain.ManifestRevision{}, fmt.Errorf("get manifest: %w", err)
+ 	}
++	// Публичный ID редакции не заменяет проверку владельца манифеста
++	if manifest.OwnerID != actorID {
++		return domain.ManifestRevision{}, domain.ErrNotFound
++	}
+ 	revision, err := m.repository.GetManifestRevision(ctx, manifest.ID, revisionID)
+ 	if err != nil {
+ 		if errors.Is(err, domain.ErrNotFound) {
+
+
+
+# V2 - SSRF проверки сертификата
+
+diff --git a/wahrwelt/backend/internal/adapter/secondary/registry/client.go b/wahrwelt-patch/backend/internal/adapter/secondary/registry/client.go
+index a93b3dd..52f4d16 100644
+--- a/wahrwelt/backend/internal/adapter/secondary/registry/client.go
++++ b/wahrwelt-patch/backend/internal/adapter/secondary/registry/client.go
+@@ -4,33 +4,76 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"io"
++	"net"
+ 	"net/http"
++	"net/netip"
+ 	"net/url"
++	"strconv"
+ 	"strings"
++	"sync"
+ 	"time"
+ )
+
+ const maxResponseBytes = 1 << 20
++const maxRedirects = 5
+
+ type Client struct {
+-	http *http.Client
++	http     *http.Client
++	lookupIP func(context.Context, string) ([]net.IPAddr, error)
++	dial     func(context.Context, string, string) (net.Conn, error)
++}
++
++type dialStateKey struct{}
++
++type dialState struct {
++	mu        sync.RWMutex
++	addresses map[string][]net.IP
+ }
+
+ func NewClient() *Client {
+-	return &Client{http: &http.Client{Timeout: 5 * time.Second}}
++	client := &Client{
++		lookupIP: net.DefaultResolver.LookupIPAddr,
++		dial: (&net.Dialer{
++			Timeout:   5 * time.Second,
++			KeepAlive: 30 * time.Second,
++		}).DialContext,
++	}
++	client.http = &http.Client{
++		Timeout: 5 * time.Second,
++		Transport: &http.Transport{
++			Proxy:                 nil,
++			DialContext:           client.dialPinned,
++			TLSHandshakeTimeout:   5 * time.Second,
++			ResponseHeaderTimeout: 5 * time.Second,
++			MaxIdleConns:          10,
++			MaxIdleConnsPerHost:   2,
++			IdleConnTimeout:       30 * time.Second,
++			ForceAttemptHTTP2:     true,
++		},
++		CheckRedirect: client.checkRedirect,
++	}
++	return client
+ }
+
+ func (c *Client) Get(ctx context.Context, target string) (string, error) {
+ 	parsed, err := url.ParseRequestURI(strings.TrimSpace(target))
+-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
++	if err != nil {
+ 		return "", fmt.Errorf("invalid registry URL")
+ 	}
++	state := &dialState{addresses: make(map[string][]net.IP)}
++	ctx = context.WithValue(ctx, dialStateKey{}, state)
++	if err := c.resolveAndPin(ctx, parsed, state); err != nil {
++		return "", err
++	}
+ 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+ 	if err != nil {
+ 		return "", fmt.Errorf("create registry request: %w", err)
+ 	}
+ 	response, err := c.http.Do(request)
+ 	if err != nil {
++		if response != nil && response.Body != nil {
++			_ = response.Body.Close()
++		}
+ 		return "", fmt.Errorf("request registry: %w", err)
+ 	}
+ 	body, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+@@ -46,3 +89,113 @@ func (c *Client) Get(ctx context.Context, target string) (string, error) {
+ 	}
+ 	return string(body), nil
+ }
++
++func (c *Client) checkRedirect(request *http.Request, via []*http.Request) error {
++	if len(via) >= maxRedirects {
++		return fmt.Errorf("too many registry redirects")
++	}
++	state, ok := request.Context().Value(dialStateKey{}).(*dialState)
++	if !ok {
++		return fmt.Errorf("registry request state is missing")
++	}
++	// Каждый redirect проверяется до запроса, чтобы внешний адрес не вел во внутреннюю сеть
++	return c.resolveAndPin(request.Context(), request.URL, state)
++}
++
++func (c *Client) resolveAndPin(ctx context.Context, target *url.URL, state *dialState) error {
++	if target == nil || target.User != nil || target.Opaque != "" || target.Fragment != "" {
++		return fmt.Errorf("invalid registry URL")
++	}
++	scheme := strings.ToLower(target.Scheme)
++	switch scheme {
++	case "http", "https":
++	default:
++		return fmt.Errorf("invalid registry URL")
++	}
++	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
++	if host == "" || strings.Contains(host, "%") {
++		return fmt.Errorf("invalid registry URL")
++	}
++	port := target.Port()
++	if port == "" {
++		if scheme == "https" {
++			port = "443"
++		} else {
++			port = "80"
++		}
++	}
++	portNumber, err := strconv.Atoi(port)
++	if err != nil || portNumber < 1 || portNumber > 65535 {
++		return fmt.Errorf("invalid registry URL")
++	}
++
++	var resolved []net.IPAddr
++	if literal, err := netip.ParseAddr(host); err == nil {
++		resolved = []net.IPAddr{{IP: net.IP(literal.Unmap().AsSlice())}}
++	} else {
++		resolved, err = c.lookupIP(ctx, host)
++		if err != nil {
++			return fmt.Errorf("resolve registry address: %w", err)
++		}
++	}
++	if len(resolved) == 0 {
++		return fmt.Errorf("registry address has no IP addresses")
++	}
++
++	addresses := make([]net.IP, 0, len(resolved))
++	seen := make(map[string]struct{}, len(resolved))
++	for _, item := range resolved {
++		if item.Zone != "" {
++			return fmt.Errorf("registry address is not public")
++		}
++		address, ok := netip.AddrFromSlice(item.IP)
++		if !ok {
++			return fmt.Errorf("registry address is invalid")
++		}
++		address = address.Unmap()
++		// Смешанный ответ DNS отклоняется целиком, чтобы повторное соединение не выбрало частный адрес
++		if !address.IsGlobalUnicast() || address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() || address.IsMulticast() {
++			return fmt.Errorf("registry address is not public")
++		}
++		canonical := address.String()
++		if _, ok := seen[canonical]; ok {
++			continue
++		}
++		seen[canonical] = struct{}{}
++		addresses = append(addresses, net.IP(address.AsSlice()))
++	}
++
++	// Сохраняем проверенные IP и используем их при dial, чтобы DNS не разрешался повторно
++	key := net.JoinHostPort(host, strconv.Itoa(portNumber))
++	state.mu.Lock()
++	state.addresses[key] = addresses
++	state.mu.Unlock()
++	return nil
++}
++
++func (c *Client) dialPinned(ctx context.Context, network, endpoint string) (net.Conn, error) {
++	state, ok := ctx.Value(dialStateKey{}).(*dialState)
++	if !ok {
++		return nil, fmt.Errorf("registry request state is missing")
++	}
++	host, port, err := net.SplitHostPort(endpoint)
++	if err != nil {
++		return nil, fmt.Errorf("invalid registry endpoint")
++	}
++	key := net.JoinHostPort(strings.TrimSuffix(strings.ToLower(host), "."), port)
++	state.mu.RLock()
++	addresses := append([]net.IP(nil), state.addresses[key]...)
++	state.mu.RUnlock()
++	if len(addresses) == 0 {
++		return nil, fmt.Errorf("registry endpoint was not validated")
++	}
++	var lastErr error
++	for _, address := range addresses {
++		connection, err := c.dial(ctx, network, net.JoinHostPort(address.String(), port))
++		if err == nil {
++			return connection, nil
++		}
++		lastErr = err
++	}
++	return nil, fmt.Errorf("connect to registry address: %w", lastErr)
++}
+
+
+
+# V3 - SQL injection поиска счетов
+
+diff --git a/wahrwelt/backend/db/queries/invoice.sql b/wahrwelt-patch/backend/db/queries/invoice.sql
+index e0d8b58..39a2972 100644
+--- a/wahrwelt/backend/db/queries/invoice.sql
++++ b/wahrwelt-patch/backend/db/queries/invoice.sql
+@@ -18,3 +18,14 @@ FROM
+ WHERE
+     invoice_number = @invoice_number;
+
++-- name: SearchInvoices :many
++SELECT
++    invoice_number,
++    amount,
++    status
++FROM
++    invoices
++WHERE
++    owner_id = @owner_id
++    AND invoice_number ILIKE @pattern;
++
+diff --git a/wahrwelt/backend/internal/adapter/secondary/postgres/invoice.go b/wahrwelt-patch/backend/internal/adapter/secondary/postgres/invoice.go
+index 22722c7..0c2f277 100644
+--- a/wahrwelt/backend/internal/adapter/secondary/postgres/invoice.go
++++ b/wahrwelt-patch/backend/internal/adapter/secondary/postgres/invoice.go
+@@ -40,22 +40,21 @@ func (s *Store) SearchInvoices(ctx context.Context, ownerID uuid.UUID, value str
+ 	}
+ 	defer func() { _ = tx.Rollback(ctx) }()
+
+-	query := "SELECT invoice_number, amount, status FROM invoices WHERE owner_id = $1 AND invoice_number ILIKE '%" + value + "%'"
+-	rows, err := tx.Query(ctx, query, ownerID)
++	// sqlc фиксирует структуру запроса, а строка поиска передается отдельным параметром
++	rows, err := sqlc.New(tx).SearchInvoices(ctx, sqlc.SearchInvoicesParams{
++		OwnerID: ownerID,
++		Pattern: "%" + value + "%",
++	})
+ 	if err != nil {
+ 		return nil, fmt.Errorf("query invoices: %w", err)
+ 	}
+-	defer rows.Close()
+-	results := make([]domain.InvoiceSearchItem, 0)
+-	for rows.Next() {
+-		var item domain.InvoiceSearchItem
+-		if err := rows.Scan(&item.Number, &item.Amount, &item.Status); err != nil {
+-			return nil, fmt.Errorf("read invoice result: %w", err)
+-		}
+-		results = append(results, item)
+-	}
+-	if err := rows.Err(); err != nil {
+-		return nil, fmt.Errorf("iterate invoice results: %w", err)
++	results := make([]domain.InvoiceSearchItem, 0, len(rows))
++	for _, row := range rows {
++		results = append(results, domain.InvoiceSearchItem{
++			Number: row.InvoiceNumber,
++			Amount: row.Amount,
++			Status: row.Status,
++		})
+ 	}
+ 	if err := tx.Commit(ctx); err != nil {
+ 		return nil, fmt.Errorf("finish invoice search: %w", err)
+
+
+
+# V4 - Mass assignment акта досмотра
+
+diff --git a/wahrwelt/backend/internal/adapter/primary/http/v1/inspection.go b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/inspection.go
+index 43ea840..6bf8e73 100644
+--- a/wahrwelt/backend/internal/adapter/primary/http/v1/inspection.go
++++ b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/inspection.go
+@@ -5,7 +5,6 @@ import (
+
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/api"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/middleware"
+-	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+ )
+
+ func (h *Handler) CreateInspection(ctx context.Context, req *api.CreateInspectionRequest) (*api.InspectionCreated, error) {
+@@ -66,12 +65,8 @@ func (h *Handler) AddInspectionComment(ctx context.Context, req *api.AddInspecti
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	var visibility *domain.InspectionVisibility
+-	if value, ok := req.Visibility.Get(); ok {
+-		mapped := domain.InspectionVisibility(value)
+-		visibility = &mapped
+-	}
+-	comment, err := h.features.Inspection.AddComment(ctx, current.UserID, params.InspectionNumber, req.Text, visibility)
++	// Публичный комментарий не должен менять доступ к закрытой заметке акта
++	comment, err := h.features.Inspection.AddComment(ctx, current.UserID, params.InspectionNumber, req.Text)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/wahrwelt/backend/internal/usecase/inspection.go b/wahrwelt-patch/backend/internal/usecase/inspection.go
+index edb16d9..f55d4df 100644
+--- a/wahrwelt/backend/internal/usecase/inspection.go
++++ b/wahrwelt-patch/backend/internal/usecase/inspection.go
+@@ -91,7 +91,7 @@ func (i *Inspection) PrivateNote(ctx context.Context, actorID uuid.UUID, number
+ 	return item.InspectorNote, nil
+ }
+
+-func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number, value string, visibility *domain.InspectionVisibility) (domain.InspectionComment, error) {
++func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number, value string) (domain.InspectionComment, error) {
+ 	if actorID == (uuid.UUID{}) {
+ 		return domain.InspectionComment{}, domain.ErrUnauthorized
+ 	}
+@@ -99,9 +99,6 @@ func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number,
+ 	if value == "" || len(value) > 500 {
+ 		return domain.InspectionComment{}, domain.ErrInvalidInput
+ 	}
+-	if visibility != nil && *visibility != domain.InspectionVisibilityPrivate && *visibility != domain.InspectionVisibilityPublic {
+-		return domain.InspectionComment{}, domain.ErrInvalidInput
+-	}
+ 	comment := domain.InspectionComment{
+ 		ID:               uuid.New(),
+ 		InspectionNumber: strings.TrimSpace(number),
+@@ -109,7 +106,7 @@ func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number,
+ 		Text:             value,
+ 		CreatedAt:        time.Now().UTC(),
+ 	}
+-	created, err := i.repository.AddInspectionComment(ctx, comment, visibility)
++	created, err := i.repository.AddInspectionComment(ctx, comment)
+ 	if err != nil {
+ 		return domain.InspectionComment{}, fmt.Errorf("add inspection comment: %w", err)
+ 	}
+diff --git a/wahrwelt/backend/internal/port/outbound/inspection.go b/wahrwelt-patch/backend/internal/port/outbound/inspection.go
+index 6c27539..8438ae2 100644
+--- a/wahrwelt/backend/internal/port/outbound/inspection.go
++++ b/wahrwelt-patch/backend/internal/port/outbound/inspection.go
+@@ -11,5 +11,5 @@ type InspectionRepository interface {
+ 	CreateInspection(context.Context, domain.Inspection) (domain.Inspection, error)
+ 	GetInspectionByNumber(context.Context, string) (domain.Inspection, error)
+ 	ListInspectionComments(context.Context, uuid.UUID) ([]domain.InspectionComment, error)
+-	AddInspectionComment(context.Context, domain.InspectionComment, *domain.InspectionVisibility) (domain.InspectionComment, error)
++	AddInspectionComment(context.Context, domain.InspectionComment) (domain.InspectionComment, error)
+ }
+diff --git a/wahrwelt/backend/internal/adapter/secondary/postgres/inspection.go b/wahrwelt-patch/backend/internal/adapter/secondary/postgres/inspection.go
+index 7385ef0..e4a88e2 100644
+--- a/wahrwelt/backend/internal/adapter/secondary/postgres/inspection.go
++++ b/wahrwelt-patch/backend/internal/adapter/secondary/postgres/inspection.go
+@@ -51,7 +51,7 @@ func (s *Store) ListInspectionComments(ctx context.Context, inspectionID uuid.UU
+ 	return result, nil
+ }
+
+-func (s *Store) AddInspectionComment(ctx context.Context, comment domain.InspectionComment, visibility *domain.InspectionVisibility) (domain.InspectionComment, error) {
++func (s *Store) AddInspectionComment(ctx context.Context, comment domain.InspectionComment) (domain.InspectionComment, error) {
+ 	tx, err := s.pool.Begin(ctx)
+ 	if err != nil {
+ 		return domain.InspectionComment{}, fmt.Errorf("begin inspection comment transaction: %w", err)
+@@ -72,14 +72,6 @@ func (s *Store) AddInspectionComment(ctx context.Context, comment domain.Inspect
+ 	if err != nil {
+ 		return domain.InspectionComment{}, translate(err)
+ 	}
+-	if visibility != nil {
+-		if err := queries.SetInspectionNoteVisibility(ctx, sqlc.SetInspectionNoteVisibilityParams{
+-			NoteVisibility: string(*visibility),
+-			ID:             inspection.ID,
+-		}); err != nil {
+-			return domain.InspectionComment{}, translate(err)
+-		}
+-	}
+ 	if err := tx.Commit(ctx); err != nil {
+ 		return domain.InspectionComment{}, fmt.Errorf("commit inspection comment transaction: %w", err)
+ 	}
+
+
+
+# V5 - Непривязанный токен лицензии
+
+diff --git a/wahrwelt/backend/internal/usecase/license.go b/wahrwelt-patch/backend/internal/usecase/license.go
+index 9b18de2..a4352da 100644
+--- a/wahrwelt/backend/internal/usecase/license.go
++++ b/wahrwelt-patch/backend/internal/usecase/license.go
+@@ -1,6 +1,7 @@
+ package usecase
+
+ import (
++	"context"
+ 	"crypto/hmac"
+ 	"crypto/rand"
+ 	"crypto/sha256"
+@@ -10,7 +11,6 @@ import (
+ 	"strings"
+ 	"time"
+
+-	"context"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
+ 	"uuid"
+@@ -24,10 +24,13 @@ type License struct {
+ 	tokenTTL   time.Duration
+ }
+
++// Подпись фиксирует лицензию, владельца, область чтения и срок действия
+ type licenseTokenPayload struct {
+-	ExpiresAt int64  `json:"exp"`
+-	Scope     string `json:"scope"`
+-	Nonce     string `json:"nonce"`
++	LicenseNumber string `json:"license_number"`
++	OwnerID       string `json:"owner_id"`
++	ExpiresAt     int64  `json:"exp"`
++	Scope         string `json:"scope"`
++	Nonce         string `json:"nonce"`
+ }
+
+ func NewLicense(repository outbound.LicenseRepository, secret string, tokenTTL time.Duration) *License {
+@@ -94,62 +97,88 @@ func (l *License) IssueToken(ctx context.Context, ownerID uuid.UUID, number, sco
+ 	if item.OwnerID != ownerID {
+ 		return domain.LicenseToken{}, domain.ErrNotFound
+ 	}
+-	return l.signToken(scope, time.Now().UTC().Add(l.tokenTTL).Truncate(time.Second))
++	return l.signToken(item.Number, item.OwnerID, scope, time.Now().UTC().Add(l.tokenTTL).Truncate(time.Second))
+ }
+
+ func (l *License) ReadWithToken(ctx context.Context, token, number string) (domain.License, error) {
+-	if err := l.ValidateReadToken(token); err != nil {
++	claims, err := l.parseReadToken(token)
++	if err != nil {
+ 		return domain.License{}, err
+ 	}
+-	item, err := l.repository.GetLicenseByNumber(ctx, strings.TrimSpace(number))
++	number = strings.TrimSpace(number)
++	// Сверяем подписанную привязку до чтения закрытого поля
++	if number == "" || number != claims.LicenseNumber {
++		return domain.License{}, domain.ErrUnauthorized
++	}
++	item, err := l.repository.GetLicenseByNumber(ctx, number)
+ 	if err != nil {
+ 		return domain.License{}, fmt.Errorf("get export license with access token: %w", err)
+ 	}
++	if item.Number != claims.LicenseNumber || item.OwnerID.String() != claims.OwnerID {
++		return domain.License{}, domain.ErrUnauthorized
++	}
+ 	return item, nil
+ }
+
+ func (l *License) ValidateReadToken(token string) error {
++	_, err := l.parseReadToken(token)
++	return err
++}
++
++func (l *License) parseReadToken(token string) (licenseTokenPayload, error) {
+ 	parts := strings.Split(token, ".")
+ 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+-		return domain.ErrUnauthorized
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+ 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+ 	if err != nil {
+-		return domain.ErrUnauthorized
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+ 	mac := hmac.New(sha256.New, l.secret)
+ 	_, _ = mac.Write([]byte(parts[0]))
+ 	if !hmac.Equal(signature, mac.Sum(nil)) {
+-		return domain.ErrUnauthorized
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+ 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+ 	if err != nil {
+-		return domain.ErrUnauthorized
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+ 	var claims map[string]json.RawMessage
+-	if err := json.Unmarshal(payload, &claims); err != nil || len(claims) != 3 || claims["exp"] == nil || claims["scope"] == nil || claims["nonce"] == nil {
+-		return domain.ErrUnauthorized
++	if err := json.Unmarshal(payload, &claims); err != nil {
++		return licenseTokenPayload{}, domain.ErrUnauthorized
++	}
++	if len(claims) != 5 || claims["license_number"] == nil || claims["owner_id"] == nil || claims["exp"] == nil || claims["scope"] == nil || claims["nonce"] == nil {
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+ 	var decoded licenseTokenPayload
+-	if err := json.Unmarshal(payload, &decoded); err != nil || decoded.Scope != LicenseReadScope || decoded.ExpiresAt <= time.Now().Unix() {
+-		return domain.ErrUnauthorized
++	if err := json.Unmarshal(payload, &decoded); err != nil {
++		return licenseTokenPayload{}, domain.ErrUnauthorized
++	}
++	if strings.TrimSpace(decoded.LicenseNumber) == "" || decoded.LicenseNumber != strings.TrimSpace(decoded.LicenseNumber) || decoded.Scope != LicenseReadScope || decoded.ExpiresAt <= time.Now().Unix() {
++		return licenseTokenPayload{}, domain.ErrUnauthorized
++	}
++	ownerID, err := uuid.Parse(decoded.OwnerID)
++	if err != nil || ownerID == (uuid.UUID{}) || ownerID.String() != decoded.OwnerID {
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+ 	nonce, err := base64.RawURLEncoding.DecodeString(decoded.Nonce)
+ 	if err != nil || len(nonce) != 16 {
+-		return domain.ErrUnauthorized
++		return licenseTokenPayload{}, domain.ErrUnauthorized
+ 	}
+-	return nil
++	return decoded, nil
+ }
+
+-func (l *License) signToken(scope string, expiresAt time.Time) (domain.LicenseToken, error) {
++func (l *License) signToken(number string, ownerID uuid.UUID, scope string, expiresAt time.Time) (domain.LicenseToken, error) {
+ 	nonce := make([]byte, 16)
+ 	if _, err := rand.Read(nonce); err != nil {
+ 		return domain.LicenseToken{}, fmt.Errorf("create license token nonce: %w", err)
+ 	}
+ 	claims := licenseTokenPayload{
+-		ExpiresAt: expiresAt.Unix(),
+-		Scope:     scope,
+-		Nonce:     base64.RawURLEncoding.EncodeToString(nonce),
++		LicenseNumber: number,
++		OwnerID:       ownerID.String(),
++		ExpiresAt:     expiresAt.Unix(),
++		Scope:         scope,
++		Nonce:         base64.RawURLEncoding.EncodeToString(nonce),
+ 	}
+ 	payload, err := json.Marshal(claims)
+ 	if err != nil {
+
+
+
+# V6 - Утечка через шаблон договора
+
+diff --git a/wahrwelt/backend/internal/usecase/contract.go b/wahrwelt-patch/backend/internal/usecase/contract.go
+index 6db5310..5c31656 100644
+--- a/wahrwelt/backend/internal/usecase/contract.go
++++ b/wahrwelt-patch/backend/internal/usecase/contract.go
+@@ -97,7 +97,19 @@ func (c *Contract) Preview(ctx context.Context, number, source string) (domain.C
+ 		return domain.ContractPreview{}, domain.ErrInvalidInput
+ 	}
+ 	output := &boundedPreviewWriter{limit: maxContractPreviewBytes}
+-	if err := parsed.Execute(output, item); err != nil {
++	// Шаблон получает только публичные поля печати, без закрытой фразы бригады
++	previewData := struct {
++		CrewName string
++		Service  string
++		StartsAt time.Time
++		EndsAt   time.Time
++	}{
++		CrewName: item.CrewName,
++		Service:  item.Service,
++		StartsAt: item.StartsAt,
++		EndsAt:   item.EndsAt,
++	}
++	if err := parsed.Execute(output, previewData); err != nil {
+ 		return domain.ContractPreview{}, domain.ErrInvalidInput
+ 	}
+ 	return domain.ContractPreview{Rendered: output.String()}, nil
+
+
+
+# V7 - Повторное согласование слота
+
+diff --git a/wahrwelt/backend/internal/domain/route_slot.go b/wahrwelt-patch/backend/internal/domain/route_slot.go
+index cafe6c7..6709876 100644
+--- a/wahrwelt/backend/internal/domain/route_slot.go
++++ b/wahrwelt-patch/backend/internal/domain/route_slot.go
+@@ -30,11 +30,12 @@ type RouteSlot struct {
+ }
+
+ type ApprovalState struct {
+-	Count int64
++	CarrierID   uuid.UUID
++	InspectorID uuid.UUID
+ }
+
+ func (state ApprovalState) Complete() bool {
+-	return state.Count >= 2
++	return state.CarrierID != (uuid.UUID{}) && state.InspectorID != (uuid.UUID{})
+ }
+
+ type ApprovalResult struct {
+@@ -43,11 +44,11 @@ type ApprovalResult struct {
+ 	Ready             bool
+ }
+
+-func NewApprovalResult(state ApprovalState, role ApprovalRole) ApprovalResult {
++func NewApprovalResult(state ApprovalState) ApprovalResult {
+ 	ready := state.Complete()
+ 	return ApprovalResult{
+-		CarrierApproved:   ready || role == RoleCarrier,
+-		InspectorApproved: ready || role == RoleInspector,
++		CarrierApproved:   state.CarrierID != (uuid.UUID{}),
++		InspectorApproved: state.InspectorID != (uuid.UUID{}),
+ 		Ready:             ready,
+ 	}
+ }
+diff --git a/wahrwelt/backend/internal/port/outbound/route_slot.go b/wahrwelt-patch/backend/internal/port/outbound/route_slot.go
+index fa1c489..0dfb812 100644
+--- a/wahrwelt/backend/internal/port/outbound/route_slot.go
++++ b/wahrwelt-patch/backend/internal/port/outbound/route_slot.go
+@@ -14,6 +14,6 @@ type RouteSlotRepository interface {
+ }
+
+ type ApprovalStore interface {
+-	Increment(context.Context, uuid.UUID, time.Duration) (domain.ApprovalState, error)
++	RecordApproval(context.Context, uuid.UUID, uuid.UUID, domain.ApprovalRole, time.Duration) (domain.ApprovalState, error)
+ 	GetApprovals(context.Context, uuid.UUID) (domain.ApprovalState, error)
+ }
+diff --git a/wahrwelt/backend/internal/usecase/route_slot.go b/wahrwelt-patch/backend/internal/usecase/route_slot.go
+index f473501..cc18138 100644
+--- a/wahrwelt/backend/internal/usecase/route_slot.go
++++ b/wahrwelt-patch/backend/internal/usecase/route_slot.go
+@@ -86,11 +86,15 @@ func (s *RouteSlot) Approve(ctx context.Context, actorID, slotID uuid.UUID, role
+ 	if (role == domain.RoleCarrier && slot.CarrierID != actorID) || (role == domain.RoleInspector && slot.InspectorID != actorID) {
+ 		return domain.ApprovalResult{}, domain.ErrForbidden
+ 	}
+-	state, err := s.approvals.Increment(ctx, slotID, s.ttl)
++	// Каждая подпись привязана к назначенному пользователю и его роли
++	state, err := s.approvals.RecordApproval(ctx, slotID, actorID, role, s.ttl)
+ 	if err != nil {
+ 		return domain.ApprovalResult{}, fmt.Errorf("record route slot approval: %w", err)
+ 	}
+-	return domain.NewApprovalResult(state, role), nil
++	if (state.CarrierID != (uuid.UUID{}) && state.CarrierID != slot.CarrierID) || (state.InspectorID != (uuid.UUID{}) && state.InspectorID != slot.InspectorID) {
++		return domain.ApprovalResult{}, domain.ErrForbidden
++	}
++	return domain.NewApprovalResult(state), nil
+ }
+
+ func (s *RouteSlot) Code(ctx context.Context, actorID, slotID uuid.UUID) (string, error) {
+@@ -114,7 +118,8 @@ func (s *RouteSlot) Code(ctx context.Context, actorID, slotID uuid.UUID) (string
+ 	if err != nil {
+ 		return "", fmt.Errorf("load route slot approvals: %w", err)
+ 	}
+-	if !state.Complete() {
++	// Код выдается только при двух подписях назначенных участников
++	if !state.Complete() || state.CarrierID != slot.CarrierID || state.InspectorID != slot.InspectorID {
+ 		return "", domain.ErrApprovalNotReady
+ 	}
+ 	return slot.Code, nil
+diff --git a/wahrwelt/backend/internal/adapter/secondary/redis/route_slot_approval.go b/wahrwelt-patch/backend/internal/adapter/secondary/redis/route_slot_approval.go
+index f90dbb3..8d3c93d 100644
+--- a/wahrwelt/backend/internal/adapter/secondary/redis/route_slot_approval.go
++++ b/wahrwelt-patch/backend/internal/adapter/secondary/redis/route_slot_approval.go
+@@ -2,9 +2,7 @@ package redis
+
+ import (
+ 	"context"
+-	"errors"
+ 	"fmt"
+-	"strconv"
+ 	"time"
+
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+@@ -13,45 +11,88 @@ import (
+ 	"uuid"
+ )
+
+-var incrementApprovalScript = redis.NewScript(`
+-local count = redis.call("INCR", KEYS[1])
+-if count == 1 then
+-  redis.call("PEXPIRE", KEYS[1], ARGV[1])
++var recordApprovalScript = redis.NewScript(`
++-- Повтор одного участника оставляет ту же подпись и не продлевает TTL
++redis.call("HSETNX", KEYS[1], ARGV[1], ARGV[2])
++local existing = redis.call("HGET", KEYS[1], ARGV[1])
++if existing ~= ARGV[2] then
++  return redis.error_reply("approval role already belongs to another user")
+ end
+-return count
++if redis.call("PTTL", KEYS[1]) < 0 then
++  redis.call("PEXPIRE", KEYS[1], ARGV[3])
++end
++return {
++  redis.call("HGET", KEYS[1], "carrier") or "",
++  redis.call("HGET", KEYS[1], "inspector") or ""
++}
+ `)
+
+-func (s *Store) Increment(ctx context.Context, slotID uuid.UUID, ttl time.Duration) (domain.ApprovalState, error) {
+-	if slotID == (uuid.UUID{}) || ttl.Milliseconds() < 1 {
++func (s *Store) RecordApproval(ctx context.Context, slotID, actorID uuid.UUID, role domain.ApprovalRole, ttl time.Duration) (domain.ApprovalState, error) {
++	if slotID == (uuid.UUID{}) || actorID == (uuid.UUID{}) || !role.Valid() || ttl.Milliseconds() < 1 {
+ 		return domain.ApprovalState{}, domain.ErrInvalidInput
+ 	}
+-	count, err := incrementApprovalScript.Run(ctx, s.client, []string{approvalKey(slotID)}, ttl.Milliseconds()).Int64()
++	// Запись роли выполняется атомарно под ключом слота в общем Redis namespace
++	values, err := recordApprovalScript.Run(ctx, s.client, []string{approvalKey(slotID)}, string(role), actorID.String(), ttl.Milliseconds()).Slice()
+ 	if err != nil {
+ 		return domain.ApprovalState{}, fmt.Errorf("record approval: %w", err)
+ 	}
+-	return domain.ApprovalState{Count: count}, nil
++	if len(values) != 2 {
++		return domain.ApprovalState{}, fmt.Errorf("record approval: unexpected state length %d", len(values))
++	}
++	return approvalStateFromValues(values[0], values[1])
+ }
+
+ func (s *Store) GetApprovals(ctx context.Context, slotID uuid.UUID) (domain.ApprovalState, error) {
+ 	if slotID == (uuid.UUID{}) {
+ 		return domain.ApprovalState{}, domain.ErrInvalidInput
+ 	}
+-	value, err := s.client.Get(ctx, approvalKey(slotID)).Result()
+-	if errors.Is(err, redis.Nil) {
+-		return domain.ApprovalState{}, domain.ErrNotFound
+-	}
++	values, err := s.client.HGetAll(ctx, approvalKey(slotID)).Result()
+ 	if err != nil {
+ 		return domain.ApprovalState{}, fmt.Errorf("read approvals: %w", err)
+ 	}
+-	count, err := strconv.ParseInt(value, 10, 64)
+-	if err != nil {
+-		return domain.ApprovalState{}, fmt.Errorf("parse approval count: %w", err)
++	if len(values) == 0 {
++		return domain.ApprovalState{}, domain.ErrNotFound
+ 	}
+-	return domain.ApprovalState{Count: count}, nil
++	return approvalStateFromValues(values["carrier"], values["inspector"])
++}
++
++func approvalStateFromValues(carrierValue, inspectorValue interface{}) (domain.ApprovalState, error) {
++	carrierID, err := approvalUserID(carrierValue)
++	if err != nil {
++		return domain.ApprovalState{}, fmt.Errorf("parse carrier approval: %w", err)
++	}
++	inspectorID, err := approvalUserID(inspectorValue)
++	if err != nil {
++		return domain.ApprovalState{}, fmt.Errorf("parse inspector approval: %w", err)
++	}
++	return domain.ApprovalState{CarrierID: carrierID, InspectorID: inspectorID}, nil
++}
++
++func approvalUserID(value interface{}) (uuid.UUID, error) {
++	if value == nil {
++		return uuid.UUID{}, nil
++	}
++	var text string
++	switch raw := value.(type) {
++	case string:
++		text = raw
++	case []byte:
++		text = string(raw)
++	default:
++		return uuid.UUID{}, fmt.Errorf("unexpected value type %T", value)
++	}
++	if text == "" {
++		return uuid.UUID{}, nil
++	}
++	id, err := uuid.Parse(text)
++	if err != nil || id == (uuid.UUID{}) {
++		return uuid.UUID{}, fmt.Errorf("invalid user id")
++	}
++	return id, nil
+ }
+
+ func approvalKey(slotID uuid.UUID) string {
+-	return namespace + ":approval-count:" + slotID.String()
++	return namespace + ":approval-records:" + slotID.String()
+ }
+
+ var _ outbound.ApprovalStore = (*Store)(nil)
+
+
+
+# V8 - Обход allowlist полей квоты
+
+diff --git a/wahrwelt/backend/internal/domain/quota.go b/wahrwelt-patch/backend/internal/domain/quota.go
+index bead27d..7290675 100644
+--- a/wahrwelt/backend/internal/domain/quota.go
++++ b/wahrwelt-patch/backend/internal/domain/quota.go
+@@ -16,7 +16,10 @@ type Quota struct {
+ 	CreatedAt time.Time
+ }
+
++// Сводка содержит только открытые значения и не несет quota_code
+ type QuotaSummary struct {
+-	Quota  Quota
+-	Fields []string
++	Number    string
++	Volume    int64
++	ExpiresAt time.Time
++	Fields    []string
+ }
+diff --git a/wahrwelt/backend/internal/usecase/quota.go b/wahrwelt-patch/backend/internal/usecase/quota.go
+index 0ea9017..c10da3d 100644
+--- a/wahrwelt/backend/internal/usecase/quota.go
++++ b/wahrwelt-patch/backend/internal/usecase/quota.go
+@@ -74,7 +74,19 @@ func (q *Quota) Summary(ctx context.Context, number, rawFields string) (domain.Q
+ 	if err != nil {
+ 		return domain.QuotaSummary{}, fmt.Errorf("get quota summary: %w", err)
+ 	}
+-	return domain.QuotaSummary{Quota: item, Fields: fields}, nil
++	summary := domain.QuotaSummary{Fields: fields}
++	// В сводку копируются только выбранные открытые значения
++	for _, field := range fields {
++		switch field {
++		case "quota_number":
++			summary.Number = item.Number
++		case "volume":
++			summary.Volume = item.Volume
++		case "expires_at":
++			summary.ExpiresAt = item.ExpiresAt
++		}
++	}
++	return summary, nil
+ }
+
+ func selectQuotaFields(raw string) ([]string, error) {
+@@ -91,11 +103,12 @@ func selectQuotaFields(raw string) ([]string, error) {
+ 	fields := make([]string, 0, len(identifiers))
+ 	seen := make(map[string]struct{}, len(identifiers))
+ 	for _, identifier := range identifiers {
+-		if identifier == "quota_code" || !validQuotaIdentifier(identifier) {
++		field := strings.ToLower(identifier)
++		// Сверяем нормализованное имя только с белым списком публичных полей
++		if !validQuotaIdentifier(field) {
+ 			return nil, domain.ErrInvalidInput
+ 		}
+-		field := strings.ToLower(identifier)
+-		if field != "quota_number" && field != "quota_code" && field != "volume" && field != "expires_at" {
++		if field != "quota_number" && field != "volume" && field != "expires_at" {
+ 			return nil, domain.ErrInvalidInput
+ 		}
+ 		if _, exists := seen[field]; exists {
+diff --git a/wahrwelt/backend/internal/adapter/primary/http/v1/quota.go b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/quota.go
+index e022d64..477b75c 100644
+--- a/wahrwelt/backend/internal/adapter/primary/http/v1/quota.go
++++ b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/quota.go
+@@ -38,16 +38,15 @@ func (h *Handler) GetQuotaSummary(ctx context.Context, params api.GetQuotaSummar
+ 		return nil, err
+ 	}
+ 	response := &api.QuotaSummary{}
++	// quota_code не попадает в публичный ответ даже при наличии поля в схеме
+ 	for _, field := range item.Fields {
+ 		switch field {
+ 		case "quota_number":
+-			response.SetQuotaNumber(api.NewOptString(item.Quota.Number))
+-		case "quota_code":
+-			response.SetQuotaCode(api.NewOptString(item.Quota.QuotaCode))
++			response.SetQuotaNumber(api.NewOptString(item.Number))
+ 		case "volume":
+-			response.SetVolume(api.NewOptInt64(item.Quota.Volume))
++			response.SetVolume(api.NewOptInt64(item.Volume))
+ 		case "expires_at":
+-			response.SetExpiresAt(api.NewOptDateTime(item.Quota.ExpiresAt))
++			response.SetExpiresAt(api.NewOptDateTime(item.ExpiresAt))
+ 		}
+ 	}
+ 	return response, nil
+
+
+
+# V9 - Ghostscript CVE-2024-29510
+
+diff --git a/wahrwelt/renderer/Dockerfile b/wahrwelt-patch/renderer/Dockerfile
+index aacaafb..d6d8544 100644
+--- a/wahrwelt/renderer/Dockerfile
++++ b/wahrwelt-patch/renderer/Dockerfile
+@@ -3,8 +3,10 @@ FROM gcc:13-bookworm@sha256:20eec427045c47d0aad1bd28c81d435916c327cd992240aa7835
+ ARG HTTP_PROXY
+ ARG HTTPS_PROXY
+ ARG NO_PROXY
+-RUN curl --fail --location --retry 2 --output /tmp/ghostscript-10.03.0.tar.xz https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10030/ghostscript-10.03.0.tar.xz && echo 'f25ff491a726d883f0b0f9c8af9b895c674cf77cddd814aa3824b3223f439ee5  /tmp/ghostscript-10.03.0.tar.xz' | sha256sum -c - && tar -xf /tmp/ghostscript-10.03.0.tar.xz -C /tmp
+-WORKDIR /tmp/ghostscript-10.03.0
++# Версия с исправлением CVE-2024-29510 закреплена SHA-512 из релиза Artifex
++# https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/SHA512SUMS
++RUN curl --fail --location --retry 2 --output /tmp/ghostscript-10.03.1.tar.xz https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/ghostscript-10.03.1.tar.xz && echo '59e071cd23aed246b51317d3cccd9ccf8e1e84c4ecf9b22fb938e561eff42cec61915b0bdd96a313a3ea27750579c54ca0d0862b65edd306a621731c0063ffd3  /tmp/ghostscript-10.03.1.tar.xz' | sha512sum -c - && tar -xf /tmp/ghostscript-10.03.1.tar.xz -C /tmp
++WORKDIR /tmp/ghostscript-10.03.1
+ RUN CFLAGS='-O2 -std=gnu17 -fPIE' LDFLAGS='-pie' ./configure --prefix=/opt/ghostscript --disable-cups --disable-gtk --without-tesseract --with-drivers=PNG,uniprint && make -j2 && make install
+ RUN set -eu; mkdir -p /opt/ghostscript/lib; ldd /opt/ghostscript/bin/gs > /tmp/gs-libraries; if grep -q 'not found' /tmp/gs-libraries; then cat /tmp/gs-libraries; exit 1; fi; awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) print $i }' /tmp/gs-libraries | sort -u | while IFS= read -r path; do name=${path##*/}; case "$name" in libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libresolv.so.*|libutil.so.*|libanl.so.*|ld-linux*.so.*) ;; *) cp -L "$path" "/opt/ghostscript/lib/$name" ;; esac; done
+
+
+
+
+# V10 - Доверие X-Forwarded-Role
+
+diff --git a/wahrwelt/backend/internal/adapter/primary/http/v1/gate_pass.go b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/gate_pass.go
+index bc8758c..d7b9e05 100644
+--- a/wahrwelt/backend/internal/adapter/primary/http/v1/gate_pass.go
++++ b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/gate_pass.go
+@@ -49,7 +49,8 @@ func (h *Handler) GetGatePassSealed(ctx context.Context, params api.GetGatePassS
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	item, err := h.features.GatePass.GetSealed(ctx, current.UserID, params.GatePassNumber, params.XForwardedRole.Or(""))
++	// Заголовок роли остается в контракте, но не определяет права пользователя
++	item, err := h.features.GatePass.GetSealed(ctx, current.UserID, params.GatePassNumber)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/wahrwelt/backend/internal/usecase/gate_pass.go b/wahrwelt-patch/backend/internal/usecase/gate_pass.go
+index 27cd294..ab5fc97 100644
+--- a/wahrwelt/backend/internal/usecase/gate_pass.go
++++ b/wahrwelt-patch/backend/internal/usecase/gate_pass.go
+@@ -78,16 +78,7 @@ func (g *GatePass) PublicCard(ctx context.Context, number string) (domain.GatePa
+ 	return domain.GatePassCard{Number: item.Number, State: item.State}, nil
+ }
+
+-func (g *GatePass) GetSealed(ctx context.Context, userID uuid.UUID, number, forwardedRole string) (domain.GatePass, error) {
+-	if userID == (uuid.UUID{}) {
+-		return domain.GatePass{}, domain.ErrUnauthorized
+-	}
+-	if forwardedRole != "gate_operator" {
+-		return domain.GatePass{}, domain.ErrForbidden
+-	}
+-	item, err := g.repository.GetGatePassByNumber(ctx, strings.TrimSpace(number))
+-	if err != nil {
+-		return domain.GatePass{}, fmt.Errorf("get gate pass details: %w", err)
+-	}
+-	return item, nil
++func (g *GatePass) GetSealed(ctx context.Context, userID uuid.UUID, number string) (domain.GatePass, error) {
++	// Get сверяет сессию с владельцем и назначенным оператором этого пропуска
++	return g.Get(ctx, userID, number)
+ }

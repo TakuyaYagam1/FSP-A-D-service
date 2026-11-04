@@ -1,0 +1,1905 @@
+openapi: 3.2.0
+info:
+  title: Wahrwelt API
+  version: 1.0.0
+  description: API for cases and route slot approvals.
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      operationId: health
+      summary: Check service health
+      responses:
+        '200':
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/register:
+    post:
+      operationId: register
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/login:
+    post:
+      operationId: login
+      summary: Start a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session started.
+          headers:
+            Set-Cookie:
+              required: true
+              schema:
+                type: string
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/logout:
+    post:
+      operationId: logout
+      summary: End the current session
+      security:
+        - SessionCookie: []
+      responses:
+        '204':
+          description: Session ended.
+          headers:
+            Set-Cookie:
+              required: true
+              schema:
+                type: string
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      summary: Read the current user
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/users:
+    get:
+      operationId: listUsers
+      summary: List users available for route assignments
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: User directory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDirectory'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/cases:
+    post:
+      operationId: createCase
+      summary: Create a case
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaseRequest'
+      responses:
+        '201':
+          description: Case created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/cases/{case_id}:
+    get:
+      operationId: getCase
+      summary: Read an owned case
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Case details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/cases/{case_id}/route-slots:
+    post:
+      operationId: createRouteSlot
+      summary: Create a route slot for an owned case
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRouteSlotRequest'
+      responses:
+        '201':
+          description: Route slot created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteSlot'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/route-slots/{slot_id}/approvals:
+    post:
+      operationId: approveRouteSlot
+      summary: Record an approval for an assigned role
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalRequest'
+      responses:
+        '200':
+          description: Accepted role and route slot readiness.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalState'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/route-slots/{slot_id}/code:
+    get:
+      operationId: getRouteSlotCode
+      summary: Read the slot code as owner or approved participant
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Route slot code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteSlotCode'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/manifests:
+    post:
+      operationId: createManifest
+      summary: Create an import manifest and its first revision
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateManifestRequest'
+      responses:
+        '201':
+          description: Manifest and first revision created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/manifests/{manifest_number}:
+    get:
+      operationId: getManifest
+      summary: Read the public manifest card
+      parameters:
+        - name: manifest_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^MNF-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Public manifest card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestCard'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/manifests/{manifest_number}/revisions:
+    get:
+      operationId: listManifestRevisions
+      summary: Read the public revision history
+      parameters:
+        - name: manifest_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^MNF-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Public revision history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestHistory'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/manifests/{manifest_number}/revisions/{revision_id}:
+    get:
+      operationId: getManifestRevision
+      summary: Read a manifest revision
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: manifest_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^MNF-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        - name: revision_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Manifest revision details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestRevision'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/certificates:
+    post:
+      operationId: createCertificate
+      summary: Create a certificate
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCertificateRequest'
+      responses:
+        '201':
+          description: Certificate created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Certificate'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/certificates/{serial}:
+    get:
+      operationId: getCertificate
+      summary: Read a certificate
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: serial
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^CRT-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Certificate details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Certificate'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/certificates/verify:
+    post:
+      operationId: verifyCertificate
+      summary: Verify a certificate registry record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyCertificateRequest'
+      responses:
+        '200':
+          description: Registry response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyCertificateResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /internal/certificates/{serial}/proof:
+    get:
+      operationId: getInternalCertificateProof
+      summary: Read a certificate proof
+      parameters:
+        - name: serial
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^CRT-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Certificate proof details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateProof'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/invoices:
+    post:
+      operationId: createInvoice
+      summary: Create an invoice
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoiceRequest'
+      responses:
+        '201':
+          description: Invoice created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceSummary'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/invoices/search:
+    get:
+      operationId: searchInvoices
+      summary: Search invoices
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      responses:
+        '200':
+          description: Matching invoices.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceSearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/invoices/{invoice_number}:
+    get:
+      operationId: getInvoice
+      summary: Read an owned invoice
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: invoice_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^INV-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Invoice details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/inspections:
+    post:
+      operationId: createInspection
+      summary: Create an inspection for a case
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInspectionRequest'
+      responses:
+        '201':
+          description: Inspection created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/inspections/{inspection_number}:
+    get:
+      operationId: getInspection
+      summary: Read an inspection card
+      parameters:
+        - name: inspection_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^INSP-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Inspection card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionCard'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/inspections/{inspection_number}/note:
+    get:
+      operationId: getInspectionNote
+      summary: Read an assigned inspection note
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: inspection_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^INSP-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Inspection note.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionNote'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/inspections/{inspection_number}/comments:
+    post:
+      operationId: addInspectionComment
+      summary: Add an inspection comment
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: inspection_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^INSP-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddInspectionCommentRequest'
+      responses:
+        '201':
+          description: Comment created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionComment'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/licenses:
+    post:
+      operationId: createLicense
+      summary: Create an export license
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLicenseRequest'
+      responses:
+        '201':
+          description: License created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/licenses/{license_number}/card:
+    get:
+      operationId: getLicenseCard
+      summary: Read a public license card
+      parameters:
+        - name: license_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Public license card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseCard'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/licenses/{license_number}:
+    get:
+      operationId: getLicense
+      summary: Read an owned license
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: license_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Full license details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/License'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/licenses/{license_number}/tokens:
+    post:
+      operationId: issueLicenseToken
+      summary: Issue a short-lived license access token
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: license_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LicenseTokenRequest'
+      responses:
+        '201':
+          description: Access token issued.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseToken'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/licenses/{license_number}/release-pin:
+    get:
+      operationId: getLicenseReleasePin
+      summary: Read a license release pin with an access token
+      security:
+        - LicenseReadToken: []
+      parameters:
+        - name: license_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: License release pin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseReleasePin'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/contracts:
+    post:
+      operationId: createContract
+      summary: Create a service contract
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContractRequest'
+      responses:
+        '201':
+          description: Contract created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/contracts/{contract_number}/card:
+    get:
+      operationId: getContractCard
+      summary: Read a public contract card
+      parameters:
+        - name: contract_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^CTR-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Public contract card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractCard'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/contracts/{contract_number}:
+    get:
+      operationId: getContract
+      summary: Read an owned contract
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: contract_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^CTR-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Full contract details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contract'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/contracts/{contract_number}/preview:
+    post:
+      operationId: previewContract
+      summary: Render a contract preview
+      parameters:
+        - name: contract_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^CTR-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContractPreviewRequest'
+      responses:
+        '200':
+          description: Rendered contract preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractPreview'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/quotas:
+    post:
+      operationId: createQuota
+      summary: Create a quota
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuotaRequest'
+      responses:
+        '201':
+          description: Quota created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/quotas/{quota_number}:
+    get:
+      operationId: getQuota
+      summary: Read an owned quota
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: quota_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^QUO-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Full quota details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quota'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/quotas/{quota_number}/summary:
+    get:
+      operationId: getQuotaSummary
+      summary: Read selected quota summary fields
+      parameters:
+        - name: quota_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^QUO-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        - name: fields
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Selected quota fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaSummary'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/archive-waybills:
+    post:
+      operationId: createWaybill
+      summary: Create an archive waybill
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWaybillRequest'
+      responses:
+        '201':
+          description: Waybill created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/archive-waybills/{waybill_number}:
+    get:
+      operationId: getWaybill
+      summary: Read an owned archive waybill
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: waybill_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^AWB-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Full waybill details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Waybill'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/archive-waybills/{waybill_number}/card:
+    get:
+      operationId: getWaybillCard
+      summary: Read a public waybill card
+      parameters:
+        - name: waybill_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^AWB-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Public waybill details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillCard'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/gate-passes:
+    post:
+      operationId: createGatePass
+      summary: Create a gate pass
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGatePassRequest'
+      responses:
+        '201':
+          description: Gate pass created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatePassCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/gate-passes/{gate_pass_number}:
+    get:
+      operationId: getGatePass
+      summary: Read an owned or assigned gate pass
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: gate_pass_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^GATE-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Gate pass details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatePass'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/gate-passes/{gate_pass_number}/card:
+    get:
+      operationId: getGatePassCard
+      summary: Read a public gate pass card
+      parameters:
+        - name: gate_pass_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^GATE-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Public gate pass details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatePassCard'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/gate-passes/{gate_pass_number}/sealed:
+    get:
+      operationId: getGatePassSealed
+      summary: Read a sealed gate pass
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: gate_pass_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^GATE-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        - name: X-Forwarded-Role
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+      responses:
+        '200':
+          description: Gate pass details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatePass'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/previews:
+    post:
+      operationId: createPreview
+      summary: Create a preview job
+      security:
+        - SessionCookie: []
+      responses:
+        '201':
+          description: Preview job created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewCreated'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/previews/{preview_id}:
+    put:
+      operationId: uploadPreview
+      summary: Upload a preview document
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: preview_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewUploadRequest'
+      responses:
+        '202':
+          description: Preview document accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewAccepted'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: getPreview
+      summary: Read an owned preview result
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: preview_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Current preview result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preview'
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+    LicenseReadToken:
+      type: http
+      scheme: bearer
+  responses:
+    Error:
+      description: Request failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [bad_request, unauthorized, forbidden, not_found, conflict, approval_not_ready, internal_error]
+        message:
+          type: string
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_.-]+$'
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
+          format: password
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_.-]+$'
+        password:
+          type: string
+          minLength: 1
+          maxLength: 72
+          format: password
+    User:
+      type: object
+      required: [user_id, username]
+      properties:
+        user_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        username:
+          type: string
+    UserDirectory:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/UserOption'
+    UserOption:
+      type: object
+      additionalProperties: false
+      required: [username]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+    CreateCaseRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, origin, destination]
+      properties:
+        kind:
+          type: string
+          enum: [import, export, service]
+        origin:
+          type: string
+          minLength: 1
+          maxLength: 120
+        destination:
+          type: string
+          minLength: 1
+          maxLength: 120
+    Case:
+      type: object
+      required: [case_id, owner_id, kind, origin, destination, created_at]
+      properties:
+        case_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        owner_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        kind:
+          type: string
+          enum: [import, export, service]
+        origin:
+          type: string
+        destination:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateRouteSlotRequest:
+      type: object
+      additionalProperties: false
+      required: [carrier_username, inspector_username, slot_code]
+      properties:
+        carrier_username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_.-]+$'
+        inspector_username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_.-]+$'
+        slot_code:
+          type: string
+          minLength: 1
+          maxLength: 120
+          writeOnly: true
+          format: password
+    RouteSlot:
+      type: object
+      required: [route_slot_id, case_id, carrier_username, inspector_username, created_at]
+      properties:
+        route_slot_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        case_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        carrier_username:
+          type: string
+        inspector_username:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [carrier, inspector]
+    ApprovalState:
+      type: object
+      required: [carrier_approved, inspector_approved, ready]
+      properties:
+        carrier_approved:
+          type: boolean
+        inspector_approved:
+          type: boolean
+        ready:
+          type: boolean
+    RouteSlotCode:
+      type: object
+      required: [slot_code]
+      properties:
+        slot_code:
+          type: string
+          format: password
+    CreateManifestRequest:
+      type: object
+      additionalProperties: false
+      required: [origin, destination, sealed_route]
+      properties:
+        origin:
+          type: string
+          minLength: 1
+          maxLength: 120
+        destination:
+          type: string
+          minLength: 1
+          maxLength: 120
+        sealed_route:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+    ManifestCreated:
+      type: object
+      required: [manifest_number, revision_id, status]
+      properties:
+        manifest_number:
+          type: string
+        revision_id:
+          type: string
+        status:
+          type: string
+          enum: [received, in_review, released]
+    ManifestCard:
+      type: object
+      required: [manifest_number, status]
+      properties:
+        manifest_number:
+          type: string
+        status:
+          type: string
+          enum: [received, in_review, released]
+    RevisionSummary:
+      type: object
+      required: [revision_id, status]
+      properties:
+        revision_id:
+          type: string
+        status:
+          type: string
+          enum: [received, in_review, released]
+    ManifestHistory:
+      type: object
+      required: [manifest_number, revisions]
+      properties:
+        manifest_number:
+          type: string
+        revisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevisionSummary'
+    ManifestRevision:
+      type: object
+      required: [manifest_number, revision_id, status, sealed_route, created_at]
+      properties:
+        manifest_number:
+          type: string
+        revision_id:
+          type: string
+        status:
+          type: string
+          enum: [received, in_review, released]
+        sealed_route:
+          type: string
+          format: password
+        created_at:
+          type: string
+          format: date-time
+    CreateCertificateRequest:
+      type: object
+      additionalProperties: false
+      required: [origin_phrase]
+      properties:
+        origin_phrase:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+    Certificate:
+      type: object
+      required: [serial, origin_phrase, created_at]
+      properties:
+        serial:
+          type: string
+          pattern: '^CRT-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        origin_phrase:
+          type: string
+          format: password
+        created_at:
+          type: string
+          format: date-time
+    VerifyCertificateRequest:
+      type: object
+      additionalProperties: false
+      required: [serial, registry_url]
+      properties:
+        serial:
+          type: string
+          pattern: '^CRT-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        registry_url:
+          type: string
+          format: uri
+    VerifyCertificateResponse:
+      type: object
+      required: [serial, body]
+      properties:
+        serial:
+          type: string
+        body:
+          type: string
+    CertificateProof:
+      type: object
+      required: [origin_phrase]
+      properties:
+        origin_phrase:
+          type: string
+          format: password
+    CreateInvoiceRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, payment_ref]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+        payment_ref:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+    InvoiceSummary:
+      type: object
+      required: [invoice_number, amount, status, created_at]
+      properties:
+        invoice_number:
+          type: string
+          pattern: '^INV-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        amount:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [pending, paid]
+        created_at:
+          type: string
+          format: date-time
+    Invoice:
+      type: object
+      required: [invoice_number, amount, status, payment_ref, created_at]
+      properties:
+        invoice_number:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [pending, paid]
+        payment_ref:
+          type: string
+          format: password
+        created_at:
+          type: string
+          format: date-time
+    InvoiceSearchItem:
+      type: object
+      required: [invoice_number, amount, status]
+      properties:
+        invoice_number:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        status:
+          type: string
+    InvoiceSearchResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceSearchItem'
+    CreateInspectionRequest:
+      type: object
+      additionalProperties: false
+      required: [case_id, inspector_username, inspector_note]
+      properties:
+        case_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        inspector_username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_.-]+$'
+        inspector_note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          format: password
+    InspectionCreated:
+      type: object
+      required: [inspection_number, created_at]
+      properties:
+        inspection_number:
+          type: string
+          pattern: '^INSP-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        created_at:
+          type: string
+          format: date-time
+    InspectionNote:
+      type: object
+      required: [inspector_note]
+      properties:
+        inspector_note:
+          type: string
+          format: password
+    InspectionComment:
+      type: object
+      required: [comment_id, text, created_at]
+      properties:
+        comment_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        text:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    InspectionCard:
+      type: object
+      required: [inspection_number, case_id, comments, created_at]
+      properties:
+        inspection_number:
+          type: string
+          pattern: '^INSP-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        case_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        inspector_note:
+          type: string
+          format: password
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionComment'
+        created_at:
+          type: string
+          format: date-time
+    AddInspectionCommentRequest:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 500
+        visibility:
+          type: string
+          enum: [private, public]
+    CreateLicenseRequest:
+      type: object
+      additionalProperties: false
+      required: [release_pin]
+      properties:
+        release_pin:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+    LicenseCreated:
+      type: object
+      required: [license_number, status, created_at]
+      properties:
+        license_number:
+          type: string
+          pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        status:
+          type: string
+          enum: [active, revoked]
+        created_at:
+          type: string
+          format: date-time
+    LicenseCard:
+      type: object
+      required: [license_number, status]
+      properties:
+        license_number:
+          type: string
+          pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        status:
+          type: string
+          enum: [active, revoked]
+    License:
+      type: object
+      required: [license_number, status, release_pin, created_at]
+      properties:
+        license_number:
+          type: string
+          pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        status:
+          type: string
+          enum: [active, revoked]
+        release_pin:
+          type: string
+          format: password
+        created_at:
+          type: string
+          format: date-time
+    LicenseTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [license:read]
+    LicenseToken:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token:
+          type: string
+          format: password
+        expires_at:
+          type: string
+          format: date-time
+    LicenseReleasePin:
+      type: object
+      required: [license_number, release_pin]
+      properties:
+        license_number:
+          type: string
+          pattern: '^LIC-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        release_pin:
+          type: string
+          format: password
+    CreateQuotaRequest:
+      type: object
+      additionalProperties: false
+      required: [quota_code, volume, expires_at]
+      properties:
+        quota_code:
+          type: string
+          minLength: 1
+          maxLength: 120
+          format: password
+        volume:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000000
+        expires_at:
+          type: string
+          format: date-time
+    QuotaCreated:
+      type: object
+      required: [quota_number, created_at]
+      properties:
+        quota_number:
+          type: string
+          pattern: '^QUO-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        created_at:
+          type: string
+          format: date-time
+    Quota:
+      type: object
+      required: [quota_number, quota_code, volume, expires_at, created_at]
+      properties:
+        quota_number:
+          type: string
+          pattern: '^QUO-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        quota_code:
+          type: string
+          format: password
+        volume:
+          type: integer
+          format: int64
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    QuotaSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        quota_number:
+          type: string
+          pattern: '^QUO-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        quota_code:
+          type: string
+          format: password
+        volume:
+          type: integer
+          format: int64
+        expires_at:
+          type: string
+          format: date-time
+    CreateContractRequest:
+      type: object
+      additionalProperties: false
+      required: [crew_name, service, crew_phrase, starts_at, ends_at]
+      properties:
+        crew_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        service:
+          type: string
+          minLength: 1
+          maxLength: 240
+        crew_phrase:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+    ContractCreated:
+      type: object
+      required: [contract_number, created_at]
+      properties:
+        contract_number:
+          type: string
+          pattern: '^CTR-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        created_at:
+          type: string
+          format: date-time
+    ContractCard:
+      type: object
+      required: [contract_number, crew_name, service, starts_at, ends_at]
+      properties:
+        contract_number:
+          type: string
+          pattern: '^CTR-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        crew_name:
+          type: string
+        service:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+    Contract:
+      type: object
+      required: [contract_number, crew_name, service, crew_phrase, starts_at, ends_at, created_at]
+      properties:
+        contract_number:
+          type: string
+          pattern: '^CTR-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        crew_name:
+          type: string
+        service:
+          type: string
+        crew_phrase:
+          type: string
+          format: password
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    ContractPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [template]
+      properties:
+        template:
+          type: string
+          minLength: 1
+          maxLength: 512
+    ContractPreview:
+      type: object
+      required: [rendered]
+      properties:
+        rendered:
+          type: string
+          maxLength: 4096
+    CreateWaybillRequest:
+      type: object
+      additionalProperties: false
+      required: [archive_code]
+      properties:
+        archive_code:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+    WaybillCreated:
+      type: object
+      required: [waybill_number, state, created_at]
+      properties:
+        waybill_number:
+          type: string
+          pattern: '^AWB-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [ready]
+        created_at:
+          type: string
+          format: date-time
+    WaybillCard:
+      type: object
+      required: [waybill_number, state]
+      properties:
+        waybill_number:
+          type: string
+          pattern: '^AWB-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [ready]
+    Waybill:
+      type: object
+      required: [waybill_number, archive_code, state, created_at]
+      properties:
+        waybill_number:
+          type: string
+          pattern: '^AWB-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        archive_code:
+          type: string
+          format: password
+        state:
+          type: string
+          enum: [ready]
+        created_at:
+          type: string
+          format: date-time
+    CreateGatePassRequest:
+      type: object
+      additionalProperties: false
+      required: [gate_operator_username, state, gate_word]
+      properties:
+        gate_operator_username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[a-z0-9_.-]{3,32}$'
+        state:
+          type: string
+          enum: [issued, closed]
+        gate_word:
+          type: string
+          minLength: 1
+          maxLength: 240
+          format: password
+    GatePassCreated:
+      type: object
+      required: [gate_pass_number, state, created_at]
+      properties:
+        gate_pass_number:
+          type: string
+          pattern: '^GATE-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [issued, closed]
+        created_at:
+          type: string
+          format: date-time
+    GatePassCard:
+      type: object
+      required: [gate_pass_number, state]
+      properties:
+        gate_pass_number:
+          type: string
+          pattern: '^GATE-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [issued, closed]
+    GatePass:
+      type: object
+      required: [gate_pass_number, state, gate_word, created_at]
+      properties:
+        gate_pass_number:
+          type: string
+          pattern: '^GATE-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [issued, closed]
+        gate_word:
+          type: string
+          format: password
+        created_at:
+          type: string
+          format: date-time
+    PreviewCreated:
+      type: object
+      required: [preview_id, state]
+      properties:
+        preview_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [created]
+    PreviewUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [eps_base64]
+      properties:
+        eps_base64:
+          type: string
+          minLength: 1
+          maxLength: 1400000
+          pattern: '^[A-Za-z0-9+/]+={0,2}$'
+    PreviewAccepted:
+      type: object
+      required: [preview_id, state]
+      properties:
+        preview_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [queued]
+    Preview:
+      type: object
+      required: [preview_id, state]
+      properties:
+        preview_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        state:
+          type: string
+          enum: [created, queued, processing, complete, failed]
+        png_base64:
+          type: string
+          maxLength: 5592408
+        stdout:
+          type: string
+          maxLength: 8192
+        stderr:
+          type: string
+          maxLength: 8192

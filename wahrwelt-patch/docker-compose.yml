@@ -1,0 +1,117 @@
+services:
+  postgres:
+    container_name: wahrwelt-postgres
+    image: postgres:alpine
+    environment:
+      POSTGRES_USER: wahrwelt
+      POSTGRES_PASSWORD: wahrwelt
+      POSTGRES_DB: wahrwelt
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wahrwelt -d wahrwelt"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    container_name: wahrwelt-redis
+    image: redis:alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--loglevel", "warning"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    restart: unless-stopped
+
+  renderer:
+    container_name: wahrwelt-render
+    image: wahrwelt-render:latest
+    pull_policy: never
+    build:
+      context: ./renderer
+      dockerfile: Dockerfile
+    volumes:
+      - archive-data:/var/lib/wahrwelt/archive:ro
+      - preview-data:/var/lib/wahrwelt/preview
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "test", "-f", "/var/lib/wahrwelt/preview/.ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 20
+      start_period: 3s
+    restart: unless-stopped
+
+  backend:
+    container_name: wahrwelt-backend
+    image: wahrwelt-backend:latest
+    pull_policy: never
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      HTTP_ADDR: 0.0.0.0:8080
+      POSTGRES_DSN: postgres://wahrwelt:wahrwelt@postgres:5432/wahrwelt?sslmode=disable
+      INVOICE_SEARCH_DSN: postgres://wahrwelt_invoice_search:wahrwelt@postgres:5432/wahrwelt?sslmode=disable
+      REDIS_ADDR: redis:6379
+      SESSION_TTL: 12h
+      APPROVAL_TTL: 15m
+      LICENSE_TOKEN_SECRET: wahrwelt-license-token-secret-key
+      LICENSE_TOKEN_TTL: 5m
+      COOKIE_SECURE: "false"
+    volumes:
+      - archive-data:/var/lib/wahrwelt/archive
+      - preview-data:/var/lib/wahrwelt/preview
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      renderer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    container_name: wahrwelt-frontend
+    image: wahrwelt-frontend:latest
+    pull_policy: never
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null && wget -qO- http://127.0.0.1/healthz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  archive-data:
+  preview-data:

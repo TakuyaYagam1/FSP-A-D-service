@@ -1,0 +1,7 @@
+parser:
+  infer_types: true
+generator:
+  initialisms:
+    - inherit
+    - ID
+    - URL
