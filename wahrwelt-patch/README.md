@@ -3,7 +3,7 @@
 Исправленная reference-версия A/D-сервиса Wahrwelt. SQL queries являются
 handwritten source-of-truth, поэтому V3 включает перегенерированный код `sqlc`.
 
-Для RBAC сценариев подготовлены учетные записи `carrier` / `carrier` и
+Для сценариев согласования подготовлены учетные записи `carrier` / `carrier` и
 `inspector` / `inspector`.
 
 ## Сравнение с уязвимой версией
@@ -28,7 +28,7 @@ redirect и подключается только к IP из уже провер
 
 - `backend/internal/adapter/secondary/registry/client.go:17-200`
 
-## V3 - SQL injection поиска счетов
+## V3 - SQLI поиска счетов
 
 Дефект вставлял поисковую строку прямо в SQL и позволял вывести `payment_ref`
 в публичном поле результата. Исправление переносит запрос в source-of-truth
