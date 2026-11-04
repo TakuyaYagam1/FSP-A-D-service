@@ -42,4 +42,4 @@ make prepare
 Подробности и команды запуска эксплойтов - в [`wahrwelt-patch/writeup/README.md`](wahrwelt-patch/writeup/README.md).
 Связь уязвимостей с общим сценарием описана в [`wahrwelt-patch/writeup/CHAINS.md`](wahrwelt-patch/writeup/CHAINS.md).
 
-Автор: TakuyaYagam1
+Автор: [TakuyaYagam1](https://t.me/TakuyaYagam1)
