@@ -45,6 +45,8 @@ const (
 	GetWaybillCardOperation              OperationName = "GetWaybillCard"
 	HealthOperation                      OperationName = "Health"
 	IssueLicenseTokenOperation           OperationName = "IssueLicenseToken"
+	ListCaseRouteSlotsOperation          OperationName = "ListCaseRouteSlots"
+	ListCasesOperation                   OperationName = "ListCases"
 	ListManifestRevisionsOperation       OperationName = "ListManifestRevisions"
 	ListUsersOperation                   OperationName = "ListUsers"
 	LoginOperation                       OperationName = "Login"

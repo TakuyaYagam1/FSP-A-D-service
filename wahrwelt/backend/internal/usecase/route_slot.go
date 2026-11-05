@@ -93,6 +93,38 @@ func (s *RouteSlot) Approve(ctx context.Context, actorID, slotID uuid.UUID, role
 	return domain.NewApprovalResult(state, role), nil
 }
 
+func (s *RouteSlot) List(ctx context.Context, actorID, caseID uuid.UUID) ([]domain.RouteSlotStatus, error) {
+	if actorID == (uuid.UUID{}) || caseID == (uuid.UUID{}) {
+		return nil, domain.ErrNotFound
+	}
+	item, err := s.cases.GetCase(ctx, caseID)
+	if err != nil {
+		return nil, fmt.Errorf("find case: %w", err)
+	}
+	if item.OwnerID != actorID {
+		return nil, domain.ErrNotFound
+	}
+	slots, err := s.slots.ListRouteSlots(ctx, caseID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("list route slots: %w", err)
+	}
+	result := make([]domain.RouteSlotStatus, 0, len(slots))
+	for _, slot := range slots {
+		if slot.OwnerID != actorID || slot.CaseID != caseID {
+			return nil, domain.ErrNotFound
+		}
+		state, err := s.approvals.GetApprovals(ctx, slot.ID)
+		if errors.Is(err, domain.ErrNotFound) {
+			state = domain.ApprovalState{}
+		} else if err != nil {
+			return nil, fmt.Errorf("read route slot approvals: %w", err)
+		}
+		slot.Code = ""
+		result = append(result, domain.RouteSlotStatus{Slot: slot, ApprovalCount: state.Count, Ready: state.Complete()})
+	}
+	return result, nil
+}
+
 func (s *RouteSlot) Code(ctx context.Context, actorID, slotID uuid.UUID) (string, error) {
 	if actorID == (uuid.UUID{}) || slotID == (uuid.UUID{}) {
 		return "", domain.ErrNotFound

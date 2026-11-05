@@ -73,3 +73,43 @@ func (q *Queries) GetCase(ctx context.Context, id uuid.UUID) (Case, error) {
 	)
 	return i, err
 }
+
+const listCasesByOwner = `-- name: ListCasesByOwner :many
+SELECT id, owner_id, kind, origin, destination, created_at
+FROM cases
+WHERE owner_id = $1
+ORDER BY created_at DESC, id DESC
+LIMIT 21 OFFSET $2
+`
+
+type ListCasesByOwnerParams struct {
+	OwnerID    uuid.UUID `json:"owner_id"`
+	PageOffset int32     `json:"page_offset"`
+}
+
+func (q *Queries) ListCasesByOwner(ctx context.Context, arg ListCasesByOwnerParams) ([]Case, error) {
+	rows, err := q.db.Query(ctx, listCasesByOwner, arg.OwnerID, arg.PageOffset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Case
+	for rows.Next() {
+		var i Case
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Kind,
+			&i.Origin,
+			&i.Destination,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

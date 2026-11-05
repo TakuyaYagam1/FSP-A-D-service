@@ -91,6 +91,8 @@ var operationRolesSessionCookie = map[string][]string{
 	GetRouteSlotCodeOperation:     []string{},
 	GetWaybillOperation:           []string{},
 	IssueLicenseTokenOperation:    []string{},
+	ListCaseRouteSlotsOperation:   []string{},
+	ListCasesOperation:            []string{},
 	ListUsersOperation:            []string{},
 	LogoutOperation:               []string{},
 	SearchInvoicesOperation:       []string{},

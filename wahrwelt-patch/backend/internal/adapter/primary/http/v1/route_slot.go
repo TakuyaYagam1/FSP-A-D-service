@@ -24,6 +24,32 @@ func (h *Handler) CreateRouteSlot(ctx context.Context, req *api.CreateRouteSlotR
 	return apiRouteSlot(item), nil
 }
 
+func (h *Handler) ListCaseRouteSlots(ctx context.Context, params api.ListCaseRouteSlotsParams) (*api.RouteSlotStatusList, error) {
+	current, err := middleware.CurrentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caseID, err := parseID(params.CaseID)
+	if err != nil {
+		return nil, err
+	}
+	statuses, err := h.routeSlots.List(ctx, current.UserID, caseID)
+	if err != nil {
+		return nil, err
+	}
+	result := &api.RouteSlotStatusList{RouteSlots: make([]api.RouteSlotStatus, 0, len(statuses))}
+	for _, status := range statuses {
+		result.RouteSlots = append(result.RouteSlots, apiRouteSlotStatus(status))
+	}
+	return result, nil
+}
+
+func apiRouteSlotStatus(status domain.RouteSlotStatus) api.RouteSlotStatus {
+	return api.RouteSlotStatus{
+		Slot: *apiRouteSlot(status.Slot), ApprovalCount: status.ApprovalCount, Ready: status.Ready,
+	}
+}
+
 func (h *Handler) ApproveRouteSlot(ctx context.Context, req *api.ApprovalRequest, params api.ApproveRouteSlotParams) (*api.ApprovalState, error) {
 	current, err := middleware.CurrentPrincipal(ctx)
 	if err != nil {

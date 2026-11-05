@@ -251,11 +251,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 						if len(elem) == 0 {
 							switch r.Method {
+							case "GET":
+								s.handleListCasesRequest([0]string{}, elemIsEscaped, w, r)
 							case "POST":
 								s.handleCreateCaseRequest([0]string{}, elemIsEscaped, w, r)
 							default:
 								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "POST",
+									allowedMethods: "GET,POST",
 									allowedHeaders: rn8AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
@@ -311,13 +313,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								if len(elem) == 0 {
 									// Leaf node.
 									switch r.Method {
+									case "GET":
+										s.handleListCaseRouteSlotsRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
 									case "POST":
 										s.handleCreateRouteSlotRequest([1]string{
 											args[0],
 										}, elemIsEscaped, w, r)
 									default:
 										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "POST",
+											allowedMethods: "GET,POST",
 											allowedHeaders: rn22AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
@@ -1937,6 +1943,15 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 						if len(elem) == 0 {
 							switch method {
+							case "GET":
+								r.name = ListCasesOperation
+								r.summary = "List owned cases with route slots and current approval counts"
+								r.operationID = "listCases"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/cases"
+								r.args = args
+								r.count = 0
+								return r, true
 							case "POST":
 								r.name = CreateCaseOperation
 								r.summary = "Create a case"
@@ -1995,6 +2010,15 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								if len(elem) == 0 {
 									// Leaf node.
 									switch method {
+									case "GET":
+										r.name = ListCaseRouteSlotsOperation
+										r.summary = "Read route slots and current approval counts for an owned case"
+										r.operationID = "listCaseRouteSlots"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/cases/{case_id}/route-slots"
+										r.args = args
+										r.count = 1
+										return r, true
 									case "POST":
 										r.name = CreateRouteSlotOperation
 										r.summary = "Create a route slot for an owned case"

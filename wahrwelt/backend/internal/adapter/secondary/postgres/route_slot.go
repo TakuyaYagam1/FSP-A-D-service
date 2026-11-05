@@ -31,6 +31,23 @@ func (s *Store) GetRouteSlot(ctx context.Context, id uuid.UUID) (domain.RouteSlo
 	return fromRouteSlot(row), nil
 }
 
+func (s *Store) ListRouteSlots(ctx context.Context, caseID, ownerID uuid.UUID) ([]domain.RouteSlot, error) {
+	rows, err := s.queries.ListRouteSlotsByCase(ctx, sqlc.ListRouteSlotsByCaseParams{CaseID: caseID, OwnerID: ownerID})
+	if err != nil {
+		return nil, translate(err)
+	}
+	items := make([]domain.RouteSlot, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, domain.RouteSlot{
+			ID: row.ID, CaseID: row.CaseID, OwnerID: row.OwnerID,
+			CarrierID: row.CarrierID, InspectorID: row.InspectorID,
+			CarrierUsername: row.CarrierUsername, InspectorUsername: row.InspectorUsername,
+			CreatedAt: row.CreatedAt.Time,
+		})
+	}
+	return items, nil
+}
+
 func fromRouteSlot(row sqlc.RouteSlot) domain.RouteSlot {
 	return domain.RouteSlot{
 		ID:          row.ID,

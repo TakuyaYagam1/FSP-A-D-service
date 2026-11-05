@@ -4,9 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Wahrwelt</title>
+    <meta name="description" content="Дела поставок Wahrwelt: маршруты, участники и текущее состояние подтверждений.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/styles.css?v=d0eeb33f245a">
-    <script src="/app.js?v=76014bffbe3c" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=owner-cases">
+    <script src="/document-preview.js" defer></script>
+    <script src="/owned-cases.js?v=owner-cases" defer></script>
+    <script src="/app.js?v=owner-cases" defer></script>
   </head>
   <body class="map-page">
     <p id="startup-status" class="startup-status" role="status">Загрузка сервиса. Если страница не открывается, <a href="/?reload=1">обновите ее</a> или <a href="/login">войдите заново</a>.</p>
@@ -59,13 +62,13 @@
         <section class="document-pin" aria-labelledby="document-pin-heading">
           <div class="document-pin-heading">
             <div><p class="eyebrow">Текущая поставка</p><h2 id="document-pin-heading">Дело маршрута</h2></div>
-            <span id="flow-progress">Шаг 1 из 3</span>
+            <span id="flow-progress">Дело: не создано</span>
           </div>
           <p id="document-route" class="document-route">Орёл -> Воронеж</p>
           <div class="document-pin-state">
             <span class="active"><b>01</b>Дело</span>
             <span><b>02</b>Назначения</span>
-            <span><b>03</b>Код</span>
+            <span><b>03</b>Согласование</span>
           </div>
           <dl class="document-meta">
             <div><dt>Дело</dt><dd id="document-case">Не создано</dd></div>
@@ -76,24 +79,33 @@
 
         <aside id="document-drawer" class="document-drawer" aria-label="Дело поставки" aria-hidden="true" hidden>
           <header class="drawer-header">
-            <div><h2>Дело поставки</h2><p id="flow-summary" class="form-help">Создайте дело, назначьте участников и задайте код.</p></div>
+            <div><h2>Дело поставки</h2><p id="flow-summary" class="form-help">Создайте дело и назначьте участников. PNG-черновик доступен отдельно.</p><button id="open-case-list" class="text-button" type="button">Мои дела</button></div>
             <button id="close-documents" class="drawer-close" type="button" aria-label="Закрыть дело">x</button>
           </header>
 
           <nav class="document-tabs" aria-label="Этапы оформления">
             <button class="active" type="button" data-document-tab="case">1. Дело</button>
             <button type="button" data-document-tab="slot" disabled>2. Назначения</button>
-            <button type="button" data-document-tab="approval" disabled>3. Код</button>
+            <button type="button" data-document-tab="approval" disabled>3. Согласование</button>
+            <button type="button" data-document-tab="preview" disabled>Черновик PNG</button>
           </nav>
 
           <div class="drawer-content">
+            <section class="document-pane" data-document-pane="cases" aria-labelledby="case-list-heading" hidden>
+              <div class="pane-heading"><h3 id="case-list-heading">Мои дела</h3><button id="refresh-case-list" class="text-button" type="button">Обновить</button></div>
+              <p class="form-help">Ваши дела и поставки. Подтверждения временные и показаны по текущему состоянию сервиса.</p>
+              <ul id="owned-cases" class="owned-cases"></ul>
+              <button id="load-more-cases" class="button button-secondary" type="button" hidden>Показать еще</button>
+              <p id="case-list-status" class="form-help" role="status" aria-live="polite"></p>
+            </section>
+
             <section class="document-pane" data-document-pane="case" aria-labelledby="case-heading">
               <div class="pane-heading"><h3 id="case-heading">Маршрут поставки</h3><span>01</span></div>
               <form id="case-form" class="drawer-form">
                 <label>Тип операции
                   <select name="kind" required>
-                    <option value="import">Поставка</option>
-                    <option value="export">Обратный рейс</option>
+                    <option value="import">Ввоз</option>
+                    <option value="export">Вывоз</option>
                     <option value="service">Сервисный рейс</option>
                   </select>
                 </label>
@@ -110,7 +122,7 @@
               <div class="pane-heading"><h3 id="slot-heading">Назначить участников</h3><span>02</span></div>
               <form id="slot-form" class="drawer-form">
                 <input name="case_id" id="case-id" type="hidden">
-                <p class="form-help">Выберите двух разных пользователей. Назначение перевозчика и инспектора действует только для этой поставки.</p>
+                <p class="form-help">Выберите два существующих аккаунта. Передайте каждому ссылку после назначения. Ссылка открывает поставку, но доступ определяет аккаунт, а не URL.</p>
                 <label>Перевозчик
                   <select name="carrier_username" id="carrier-select" required>
                     <option value="">Выберите перевозчика</option>
@@ -131,11 +143,15 @@
             <section class="document-pane" data-document-pane="approval" aria-labelledby="approval-heading" hidden>
               <div class="pane-heading"><h3 id="approval-heading">Участники назначены</h3><span>03</span></div>
               <p id="completion-summary" class="form-help"></p>
+              <div id="owner-approval-panel" class="owner-approval-panel" hidden>
+                <p id="owner-approval-status" role="status" aria-live="polite">Подтверждения загружаются...</p>
+                <button id="refresh-owner-status" class="button button-secondary" type="button">Обновить подтверждения</button>
+              </div>
               <button class="button" id="read-code-button" type="button">Получить код поставки</button>
               <div id="code-result" class="result" hidden></div>
               <section id="participant-links" class="participant-links" aria-labelledby="participant-links-heading" hidden>
                 <h4 id="participant-links-heading">Ссылки участникам</h4>
-                <p class="form-help">Передайте каждому участнику его ссылку. Сервис проверит аккаунт по назначению при подтверждении.</p>
+                <p class="form-help">Отправьте первую ссылку владельцу аккаунта перевозчика, вторую - владельцу аккаунта инспектора. Они войдут под своими именами и подтвердят маршрут. Ссылки не выдают права.</p>
                 <div class="participant-link">
                   <label id="carrier-link-label" for="carrier-approval-link">Перевозчик</label>
                   <div class="participant-link-row">
@@ -152,7 +168,8 @@
                 </div>
                 <p id="link-notice" class="link-notice" role="status" aria-live="polite"></p>
               </section>
-              <p class="form-help">Создатель дела получает код сразу. Для назначенных перевозчика и инспектора он откроется после подтверждения маршрута.</p>
+              <p class="form-help">Создатель дела получает код сразу. Для назначенных перевозчика и инспектора он откроется после подтверждения маршрута. Подтверждения временные: по умолчанию 15 минут с первой подписи.</p>
+              <button class="button button-secondary" id="continue-preview" type="button" hidden>К черновику PNG</button>
               <details class="approval-details">
                 <summary>Подтверждение маршрута</summary>
                 <p id="approval-help" class="form-help"></p>
@@ -167,6 +184,17 @@
                 <summary>Идентификаторы дела и поставки</summary>
                 <p class="form-help" id="document-ids"></p>
               </details>
+            </section>
+
+            <section class="document-pane" data-document-pane="preview" aria-labelledby="preview-heading" hidden>
+              <div class="pane-heading"><h3 id="preview-heading">Черновик маршрута</h3><span>PNG</span></div>
+              <p class="form-help">Создайте PNG-черновик из типа операции и маршрута дела. Это не подписанный документ: предпросмотр не привязан к делу на сервере и не зависит от подтверждений.</p>
+              <button class="button" id="render-preview-button" type="button">Создать PNG-черновик</button>
+              <p id="preview-status" class="form-help" role="status" aria-live="polite"></p>
+              <div id="preview-output" class="preview-output" hidden>
+                <img id="preview-image" alt="Черновик маршрутного документа">
+                <a id="download-preview" class="button button-secondary" download="route-draft.png">Скачать черновик PNG</a>
+              </div>
             </section>
 
             <button class="button button-secondary new-case" id="new-case-button" type="button" hidden>Создать новое дело</button>

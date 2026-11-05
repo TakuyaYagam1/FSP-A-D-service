@@ -30,6 +30,18 @@ func (s *Store) GetCase(ctx context.Context, id uuid.UUID) (domain.Case, error) 
 	return fromCase(row), nil
 }
 
+func (s *Store) ListCases(ctx context.Context, ownerID uuid.UUID, offset int32) ([]domain.Case, error) {
+	rows, err := s.queries.ListCasesByOwner(ctx, sqlc.ListCasesByOwnerParams{OwnerID: ownerID, PageOffset: offset})
+	if err != nil {
+		return nil, translate(err)
+	}
+	items := make([]domain.Case, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, fromCase(row))
+	}
+	return items, nil
+}
+
 func fromCase(row sqlc.Case) domain.Case {
 	return domain.Case{
 		ID:          row.ID,

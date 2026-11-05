@@ -364,6 +364,24 @@ func (UnimplementedHandler) IssueLicenseToken(ctx context.Context, req *LicenseT
 	return r, ht.ErrNotImplemented
 }
 
+// ListCaseRouteSlots implements listCaseRouteSlots operation.
+//
+// Read route slots and current approval counts for an owned case.
+//
+// GET /api/v1/cases/{case_id}/route-slots
+func (UnimplementedHandler) ListCaseRouteSlots(ctx context.Context, params ListCaseRouteSlotsParams) (r *RouteSlotStatusList, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListCases implements listCases operation.
+//
+// List owned cases with route slots and current approval counts.
+//
+// GET /api/v1/cases
+func (UnimplementedHandler) ListCases(ctx context.Context, params ListCasesParams) (r *CaseList, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListManifestRevisions implements listManifestRevisions operation.
 //
 // Read the public revision history.

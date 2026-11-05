@@ -9,6 +9,11 @@ const documentSteps = document.querySelectorAll(".document-pin-state span");
 const documentDrawer = document.querySelector("#document-drawer");
 let currentUsername = "";
 let flow = {};
+let previewURL = "";
+let ownedCases = [];
+let ownedCasesHasMore = false;
+let ownedCasesBusy = false;
+let currentSlotStatus = null;
 let participantApprovalError = false;
 let participantApproval = readParticipantApproval();
 
@@ -118,15 +123,18 @@ function refreshFlow() {
   const hasCase = !participantApproval && Boolean(flow.case_id);
   const slotId = participantApproval?.slotId || flow.route_slot_id || "";
   const hasSlot = Boolean(slotId);
+  const hasSavedCases = !participantApproval && ownedCases.length > 0;
   document.querySelector('[data-document-tab="slot"]').disabled = !hasCase;
   document.querySelector('[data-document-tab="approval"]').disabled = !hasSlot;
+  document.querySelector('[data-document-tab="preview"]').disabled = !hasCase;
+  document.querySelector("#continue-preview").hidden = !hasCase;
   document.querySelector("#case-id").value = hasCase ? flow.case_id : "";
   document.querySelector("#slot-id").value = slotId;
   document.querySelector("#document-case").textContent = hasCase
     ? "Создано"
     : participantApproval
       ? "По ссылке"
-      : "Не создано";
+      : hasSavedCases ? "Есть дела" : "Не создано";
   document.querySelector("#document-slot").textContent = hasSlot
     ? participantApproval
       ? "По ссылке"
@@ -142,17 +150,21 @@ function refreshFlow() {
   caseForm.querySelector('button[type="submit"]').disabled = hasCase;
   document.querySelector("#continue-slot").hidden = !hasCase;
   document.querySelector("#new-case-button").hidden = !hasCase;
+  document.querySelector("#open-case-list").hidden = Boolean(participantApproval);
+  document.querySelector("#owner-approval-panel").hidden = !hasCase || !hasSlot;
   caseForm.elements.origin.readOnly = hasCase;
   caseForm.elements.destination.readOnly = hasCase;
   caseForm.elements.kind.disabled = hasCase;
   document.querySelector("#slot-form button[type='submit']").disabled = hasSlot;
   document.querySelector("#flow-progress").textContent =
-    `Шаг ${hasSlot ? 3 : hasCase ? 2 : 1} из 3`;
+    `Дело: ${hasCase ? "создано" : hasSavedCases ? "выберите сохраненное" : "не создано"} / участники: ${hasSlot ? "назначены" : "не назначены"}`;
   document.querySelector("#flow-summary").textContent = participantApproval
     ? "Подтверждение маршрута по ссылке."
     : hasCase
       ? displayRoute(flow.origin, flow.destination)
-      : "Создайте дело, назначьте участников и задайте код.";
+      : hasSavedCases
+        ? "Выберите дело в «Мои дела» или создайте новое."
+        : "Создайте дело и назначьте участников. PNG-черновик доступен отдельно.";
   if (participantApproval) {
     document.querySelector("#document-route").textContent =
       "Поставка по ссылке";
@@ -185,6 +197,7 @@ function refreshFlow() {
   }
   refreshParticipantLinks();
   refreshApproval();
+  renderOwnerStatus();
   setDocumentStep(hasSlot ? 2 : hasCase ? 1 : 0);
 }
 
@@ -415,13 +428,16 @@ caseForm.addEventListener("submit", (event) => {
       body: JSON.stringify(values),
     });
     clearParticipantApproval();
+    resetPreview();
     flow = {
       case_id: item.case_id,
       kind: values.kind,
       origin: item.origin,
       destination: item.destination,
     };
+    currentSlotStatus = null;
     saveFlow();
+    void loadOwnedCases(true).catch((error) => showNotice(`Дело создано, но список не обновился. ${error.message}`, true));
     refreshFlow();
     showDocumentPane("slot");
     showNotice("Дело создано. Назначьте перевозчика и инспектора, затем задайте код поставки.");
@@ -442,7 +458,9 @@ document.querySelector("#slot-form").addEventListener("submit", (event) => {
       carrier_username: item.carrier_username,
       inspector_username: item.inspector_username,
     };
+    currentSlotStatus = { slot: item, approval_count: 0, ready: false };
     saveFlow();
+    void loadOwnedCases(true).catch((error) => showNotice(`Назначения сохранены, но список не обновился. ${error.message}`, true));
     document.querySelector("#slot-form [name='slot_code']").value = "";
     refreshFlow();
     showDocumentPane("approval");
@@ -484,16 +502,10 @@ document
         },
       );
       showResult(document.querySelector("#slot-action-result"), [
-        `Перевозчик: ${result.carrier_approved ? "подтверждено" : "ожидается"}`,
-        `Инспектор: ${result.inspector_approved ? "подтверждено" : "ожидается"}`,
+        "Подтверждение записано.",
         `Маршрут готов: ${result.ready ? "да" : "нет"}`,
       ]);
-      if (result.ready) setDocumentStep(2);
-      showNotice(
-        result.ready
-          ? "Перевозчик и инспектор подтвердили маршрут."
-          : "Подтверждение записано. Нужен ответ второго участника.",
-      );
+      showNotice(result.ready ? "Маршрут отмечен как готовый. Владелец может обновить статус дела." : "Подтверждение записано. Маршрут пока не готов.");
     });
   });
 
@@ -527,8 +539,80 @@ document
 document
   .querySelector("#continue-slot")
   .addEventListener("click", () => showDocumentPane("slot"));
+document.querySelector("#continue-preview").addEventListener("click", () => showDocumentPane("preview"));
+
+function resetPreview() {
+  if (previewURL) URL.revokeObjectURL(previewURL);
+  previewURL = "";
+  document.querySelector("#preview-output").hidden = true;
+  document.querySelector("#preview-image").removeAttribute("src");
+  document.querySelector("#download-preview").removeAttribute("href");
+  document.querySelector("#preview-status").textContent = "";
+  document.querySelector("#render-preview-button").textContent = "Создать PNG-черновик";
+}
+
+async function showPreview(id) {
+  const status = document.querySelector("#preview-status");
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const result = await request(`/api/v1/previews/${encodeURIComponent(id)}`);
+    if (result.state === "complete") {
+      if (!result.png_base64) throw new Error("Сервис не вернул PNG.");
+      const bytes = Uint8Array.from(atob(result.png_base64), (char) => char.charCodeAt(0));
+      if (bytes.length < 8 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) {
+        throw new Error("Результат не является PNG.");
+      }
+      resetPreview();
+      previewURL = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+      document.querySelector("#preview-image").src = previewURL;
+      document.querySelector("#download-preview").href = previewURL;
+      document.querySelector("#preview-output").hidden = false;
+      status.textContent = "PNG-черновик готов. Скачайте его ниже.";
+      document.querySelector("#render-preview-button").textContent = "Проверить PNG снова";
+      return;
+    }
+    if (result.state === "failed") {
+      if (flow.preview_id === id) {
+        delete flow.preview_id;
+        saveFlow();
+      }
+      throw new Error("Renderer не смог создать PNG. Нажмите еще раз для новой попытки.");
+    }
+    status.textContent = "Renderer обрабатывает черновик...";
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  status.textContent = "Рендер еще идет. Нажмите кнопку еще раз, чтобы проверить результат.";
+}
+
+document.querySelector("#render-preview-button").addEventListener("click", async () => {
+  const button = document.querySelector("#render-preview-button");
+  button.disabled = true;
+  showNotice("");
+  try {
+    if (!flow.case_id || participantApproval) throw new Error("Откройте собственное дело, чтобы создать черновик.");
+    if (!flow.preview_id) {
+      const created = await request("/api/v1/previews", { method: "POST" });
+      const eps = buildPreviewEPS(flow);
+      const bytes = new TextEncoder().encode(eps);
+      const encoded = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+      await request(`/api/v1/previews/${encodeURIComponent(created.preview_id)}`, {
+        method: "PUT", body: JSON.stringify({ eps_base64: encoded }),
+      });
+      flow.preview_id = created.preview_id;
+      saveFlow();
+    }
+    await showPreview(flow.preview_id);
+  } catch (error) {
+    document.querySelector("#preview-status").textContent = error.message;
+    showNotice(error.message, true);
+  } finally {
+    refreshFlow();
+    button.disabled = false;
+  }
+});
 document.querySelector("#new-case-button").addEventListener("click", () => {
+  resetPreview();
   flow = {};
+  currentSlotStatus = null;
   saveFlow();
   caseForm.reset();
   document.querySelector("#slot-form").reset();
@@ -539,6 +623,7 @@ document.querySelector("#new-case-button").addEventListener("click", () => {
     details.open = false;
   });
   refreshFlow();
+  renderOwnedCases();
   const selected = document.querySelector("button[data-route].active");
   if (selected) selectRoute(selected);
   showDocumentPane("case");
@@ -591,19 +676,35 @@ async function restoreSession() {
   try {
     const directory = await request("/api/v1/users");
     setUserOptions(directory.users);
-    const currentUserExists = directory.users.some(
-      (item) => item.username === currentUsername,
-    );
-    carrierSelect.value =
-      flow.carrier_username || (currentUserExists ? currentUsername : "");
-    inspectorSelect.value =
-      flow.inspector_username ||
-      directory.users.find((item) => item.username !== carrierSelect.value)
-        ?.username ||
-      "";
+    carrierSelect.value = flow.carrier_username || "";
+    inspectorSelect.value = flow.inspector_username || "";
     syncUserOptions();
   } catch (error) {
     showNotice(`Не удалось загрузить участников. ${error.message}`, true);
+  }
+  if (!participantApproval) {
+    const savedCaseID = flow.case_id;
+    const savedSlotID = flow.route_slot_id;
+    try {
+      await loadOwnedCases(true);
+      if (savedCaseID) {
+        let entry = ownedCases.find((item) => item.case.case_id === savedCaseID);
+        if (!entry) entry = { case: await request(`/api/v1/cases/${encodeURIComponent(savedCaseID)}`) };
+        await openOwnedCase(entry, savedSlotID, false);
+      } else if (ownedCases.length) {
+        showDocumentPane("cases");
+      }
+    } catch (error) {
+      if (error.status === 404 && savedCaseID) {
+        flow = {};
+        currentSlotStatus = null;
+        saveFlow();
+        refreshFlow();
+        renderOwnedCases();
+        showDocumentPane("cases");
+      }
+      showNotice(`Не удалось восстановить дела. ${error.message}`, true);
+    }
   }
 }
 

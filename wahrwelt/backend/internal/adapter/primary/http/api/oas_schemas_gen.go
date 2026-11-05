@@ -292,6 +292,32 @@ func (s *CaseKind) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/CaseList
+type CaseList struct {
+	Cases   []OwnedCase `json:"cases"`
+	HasMore bool        `json:"has_more"`
+}
+
+// GetCases returns the value of Cases.
+func (s *CaseList) GetCases() []OwnedCase {
+	return s.Cases
+}
+
+// GetHasMore returns the value of HasMore.
+func (s *CaseList) GetHasMore() bool {
+	return s.HasMore
+}
+
+// SetCases sets the value of Cases.
+func (s *CaseList) SetCases(val []OwnedCase) {
+	s.Cases = val
+}
+
+// SetHasMore sets the value of HasMore.
+func (s *CaseList) SetHasMore(val bool) {
+	s.HasMore = val
+}
+
 // Ref: #/components/schemas/Certificate
 type Certificate struct {
 	Serial       string    `json:"serial"`
@@ -2592,6 +2618,52 @@ func (o OptDateTime) Or(d time.Time) time.Time {
 	return d
 }
 
+// NewOptInt32 returns new OptInt32 with value set to v.
+func NewOptInt32(v int32) OptInt32 {
+	return OptInt32{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptInt32 is optional int32.
+type OptInt32 struct {
+	Value int32
+	Set   bool
+}
+
+// IsSet returns true if OptInt32 was set.
+func (o OptInt32) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptInt32) Reset() {
+	var v int32
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptInt32) SetTo(v int32) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptInt32) Get() (v int32, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptInt32) Or(d int32) int32 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt64 returns new OptInt64 with value set to v.
 func NewOptInt64(v int64) OptInt64 {
 	return OptInt64{
@@ -2682,6 +2754,32 @@ func (o OptString) Or(d string) string {
 		return v
 	}
 	return d
+}
+
+// Ref: #/components/schemas/OwnedCase
+type OwnedCase struct {
+	Case       Case              `json:"case"`
+	RouteSlots []RouteSlotStatus `json:"route_slots"`
+}
+
+// GetCase returns the value of Case.
+func (s *OwnedCase) GetCase() Case {
+	return s.Case
+}
+
+// GetRouteSlots returns the value of RouteSlots.
+func (s *OwnedCase) GetRouteSlots() []RouteSlotStatus {
+	return s.RouteSlots
+}
+
+// SetCase sets the value of Case.
+func (s *OwnedCase) SetCase(val Case) {
+	s.Case = val
+}
+
+// SetRouteSlots sets the value of RouteSlots.
+func (s *OwnedCase) SetRouteSlots(val []RouteSlotStatus) {
+	s.RouteSlots = val
 }
 
 // Ref: #/components/schemas/Preview
@@ -3245,6 +3343,58 @@ func (s *RouteSlotCode) GetSlotCode() string {
 // SetSlotCode sets the value of SlotCode.
 func (s *RouteSlotCode) SetSlotCode(val string) {
 	s.SlotCode = val
+}
+
+// Ref: #/components/schemas/RouteSlotStatus
+type RouteSlotStatus struct {
+	Slot          RouteSlot `json:"slot"`
+	ApprovalCount int64     `json:"approval_count"`
+	Ready         bool      `json:"ready"`
+}
+
+// GetSlot returns the value of Slot.
+func (s *RouteSlotStatus) GetSlot() RouteSlot {
+	return s.Slot
+}
+
+// GetApprovalCount returns the value of ApprovalCount.
+func (s *RouteSlotStatus) GetApprovalCount() int64 {
+	return s.ApprovalCount
+}
+
+// GetReady returns the value of Ready.
+func (s *RouteSlotStatus) GetReady() bool {
+	return s.Ready
+}
+
+// SetSlot sets the value of Slot.
+func (s *RouteSlotStatus) SetSlot(val RouteSlot) {
+	s.Slot = val
+}
+
+// SetApprovalCount sets the value of ApprovalCount.
+func (s *RouteSlotStatus) SetApprovalCount(val int64) {
+	s.ApprovalCount = val
+}
+
+// SetReady sets the value of Ready.
+func (s *RouteSlotStatus) SetReady(val bool) {
+	s.Ready = val
+}
+
+// Ref: #/components/schemas/RouteSlotStatusList
+type RouteSlotStatusList struct {
+	RouteSlots []RouteSlotStatus `json:"route_slots"`
+}
+
+// GetRouteSlots returns the value of RouteSlots.
+func (s *RouteSlotStatusList) GetRouteSlots() []RouteSlotStatus {
+	return s.RouteSlots
+}
+
+// SetRouteSlots sets the value of RouteSlots.
+func (s *RouteSlotStatusList) SetRouteSlots(val []RouteSlotStatus) {
+	s.RouteSlots = val
 }
 
 type SessionCookie struct {

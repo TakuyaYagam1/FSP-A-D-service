@@ -8,6 +8,7 @@ package sqlc
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	uuid "uuid"
 )
 
@@ -77,4 +78,59 @@ func (q *Queries) GetRouteSlot(ctx context.Context, id uuid.UUID) (RouteSlot, er
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listRouteSlotsByCase = `-- name: ListRouteSlotsByCase :many
+SELECT s.id, s.case_id, s.owner_id, s.carrier_id, s.inspector_id,
+       c.username AS carrier_username, i.username AS inspector_username, s.created_at
+FROM route_slots AS s
+JOIN users AS c ON c.id = s.carrier_id
+JOIN users AS i ON i.id = s.inspector_id
+WHERE s.case_id = $1 AND s.owner_id = $2
+ORDER BY s.created_at DESC, s.id DESC
+`
+
+type ListRouteSlotsByCaseParams struct {
+	CaseID  uuid.UUID `json:"case_id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+type ListRouteSlotsByCaseRow struct {
+	ID                uuid.UUID          `json:"id"`
+	CaseID            uuid.UUID          `json:"case_id"`
+	OwnerID           uuid.UUID          `json:"owner_id"`
+	CarrierID         uuid.UUID          `json:"carrier_id"`
+	InspectorID       uuid.UUID          `json:"inspector_id"`
+	CarrierUsername   string             `json:"carrier_username"`
+	InspectorUsername string             `json:"inspector_username"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListRouteSlotsByCase(ctx context.Context, arg ListRouteSlotsByCaseParams) ([]ListRouteSlotsByCaseRow, error) {
+	rows, err := q.db.Query(ctx, listRouteSlotsByCase, arg.CaseID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRouteSlotsByCaseRow
+	for rows.Next() {
+		var i ListRouteSlotsByCaseRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CaseID,
+			&i.OwnerID,
+			&i.CarrierID,
+			&i.InspectorID,
+			&i.CarrierUsername,
+			&i.InspectorUsername,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

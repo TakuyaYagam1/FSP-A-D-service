@@ -242,6 +242,18 @@ type Handler interface {
 	//
 	// POST /api/v1/licenses/{license_number}/tokens
 	IssueLicenseToken(ctx context.Context, req *LicenseTokenRequest, params IssueLicenseTokenParams) (*LicenseTokenHeaders, error)
+	// ListCaseRouteSlots implements listCaseRouteSlots operation.
+	//
+	// Read route slots and current approval counts for an owned case.
+	//
+	// GET /api/v1/cases/{case_id}/route-slots
+	ListCaseRouteSlots(ctx context.Context, params ListCaseRouteSlotsParams) (*RouteSlotStatusList, error)
+	// ListCases implements listCases operation.
+	//
+	// List owned cases with route slots and current approval counts.
+	//
+	// GET /api/v1/cases
+	ListCases(ctx context.Context, params ListCasesParams) (*CaseList, error)
 	// ListManifestRevisions implements listManifestRevisions operation.
 	//
 	// Read the public revision history.

@@ -44,6 +44,31 @@ func (c *Case) Create(ctx context.Context, ownerID uuid.UUID, kindValue, originV
 	return created, nil
 }
 
+const casePageSize = 20
+
+func (c *Case) List(ctx context.Context, actorID uuid.UUID, offset int32) ([]domain.Case, bool, error) {
+	if actorID == (uuid.UUID{}) {
+		return nil, false, domain.ErrNotFound
+	}
+	if offset < 0 {
+		return nil, false, domain.ErrInvalidInput
+	}
+	items, err := c.repository.ListCases(ctx, actorID, offset)
+	if err != nil {
+		return nil, false, fmt.Errorf("list cases: %w", err)
+	}
+	for _, item := range items {
+		if item.OwnerID != actorID {
+			return nil, false, domain.ErrNotFound
+		}
+	}
+	more := len(items) > casePageSize
+	if more {
+		items = items[:casePageSize]
+	}
+	return items, more, nil
+}
+
 func (c *Case) Get(ctx context.Context, actorID, caseID uuid.UUID) (domain.Case, error) {
 	if actorID == (uuid.UUID{}) || caseID == (uuid.UUID{}) {
 		return domain.Case{}, domain.ErrNotFound

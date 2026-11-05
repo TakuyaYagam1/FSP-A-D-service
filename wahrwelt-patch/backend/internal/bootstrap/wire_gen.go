@@ -8,10 +8,9 @@ package bootstrap
 
 import (
 	"context"
-
 	"github.com/TakuyaYagam1/wahrwelt/config"
 	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/middleware"
-	v1 "github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/v1"
+	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/v1"
 	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/secondary/filesystem"
 	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/secondary/password"
 	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/secondary/postgres"

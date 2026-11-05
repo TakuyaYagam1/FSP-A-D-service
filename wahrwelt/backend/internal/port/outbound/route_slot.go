@@ -11,6 +11,7 @@ import (
 type RouteSlotRepository interface {
 	CreateRouteSlot(context.Context, domain.RouteSlot) (domain.RouteSlot, error)
 	GetRouteSlot(context.Context, uuid.UUID) (domain.RouteSlot, error)
+	ListRouteSlots(context.Context, uuid.UUID, uuid.UUID) ([]domain.RouteSlot, error)
 }
 
 type ApprovalStore interface {

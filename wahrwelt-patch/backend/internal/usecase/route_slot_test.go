@@ -19,6 +19,10 @@ func (routeSlotCasesStub) GetCase(context.Context, uuid.UUID) (domain.Case, erro
 	return domain.Case{}, domain.ErrNotFound
 }
 
+func (routeSlotCasesStub) ListCases(context.Context, uuid.UUID, int32) ([]domain.Case, error) {
+	return nil, nil
+}
+
 type routeSlotUsersStub struct{}
 
 func (routeSlotUsersStub) CreateUser(_ context.Context, item domain.User) (domain.User, error) {
@@ -48,6 +52,10 @@ func (r *routeSlotRepositoryStub) CreateRouteSlot(_ context.Context, item domain
 
 func (r *routeSlotRepositoryStub) GetRouteSlot(_ context.Context, _ uuid.UUID) (domain.RouteSlot, error) {
 	return r.item, nil
+}
+
+func (r *routeSlotRepositoryStub) ListRouteSlots(context.Context, uuid.UUID, uuid.UUID) ([]domain.RouteSlot, error) {
+	return []domain.RouteSlot{r.item}, nil
 }
 
 type countingApprovalStoreStub struct {

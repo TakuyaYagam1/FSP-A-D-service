@@ -29,6 +29,12 @@ type RouteSlot struct {
 	CreatedAt         time.Time
 }
 
+type RouteSlotStatus struct {
+	Slot          RouteSlot
+	ApprovalCount int64
+	Ready         bool
+}
+
 type ApprovalState struct {
 	Count int64
 }

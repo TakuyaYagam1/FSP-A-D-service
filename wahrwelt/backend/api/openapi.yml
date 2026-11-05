@@ -117,6 +117,28 @@ paths:
         default:
           $ref: '#/components/responses/Error'
   /api/v1/cases:
+    get:
+      operationId: listCases
+      summary: List owned cases with route slots and current approval counts
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            maximum: 1000000
+      responses:
+        '200':
+          description: Owned cases in newest-first order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseList'
+        default:
+          $ref: '#/components/responses/Error'
     post:
       operationId: createCase
       summary: Create a case
@@ -160,6 +182,27 @@ paths:
         default:
           $ref: '#/components/responses/Error'
   /api/v1/cases/{case_id}/route-slots:
+    get:
+      operationId: listCaseRouteSlots
+      summary: Read route slots and current approval counts for an owned case
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Route slots and current approvals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteSlotStatusList'
+        default:
+          $ref: '#/components/responses/Error'
     post:
       operationId: createRouteSlot
       summary: Create a route slot for an owned case
@@ -1186,6 +1229,46 @@ components:
         created_at:
           type: string
           format: date-time
+    CaseList:
+      type: object
+      required: [cases, has_more]
+      properties:
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnedCase'
+        has_more:
+          type: boolean
+    OwnedCase:
+      type: object
+      required: [case, route_slots]
+      properties:
+        case:
+          $ref: '#/components/schemas/Case'
+        route_slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteSlotStatus'
+    RouteSlotStatusList:
+      type: object
+      required: [route_slots]
+      properties:
+        route_slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteSlotStatus'
+    RouteSlotStatus:
+      type: object
+      required: [slot, approval_count, ready]
+      properties:
+        slot:
+          $ref: '#/components/schemas/RouteSlot'
+        approval_count:
+          type: integer
+          format: int64
+          minimum: 0
+        ready:
+          type: boolean
     CreateRouteSlotRequest:
       type: object
       additionalProperties: false

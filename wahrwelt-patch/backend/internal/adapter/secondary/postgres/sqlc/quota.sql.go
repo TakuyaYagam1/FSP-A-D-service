@@ -8,9 +8,8 @@ package sqlc
 import (
 	"context"
 
-	uuid "uuid"
-
 	"github.com/jackc/pgx/v5/pgtype"
+	uuid "uuid"
 )
 
 const createQuota = `-- name: CreateQuota :one
