@@ -93,6 +93,31 @@ func (s *RouteSlot) Approve(ctx context.Context, actorID, slotID uuid.UUID, role
 	return domain.NewApprovalResult(state, role), nil
 }
 
+func (s *RouteSlot) Status(ctx context.Context, actorID, slotID uuid.UUID) (domain.RouteSlotStatus, error) {
+	if actorID == (uuid.UUID{}) || slotID == (uuid.UUID{}) {
+		return domain.RouteSlotStatus{}, domain.ErrNotFound
+	}
+	slot, err := s.slots.GetRouteSlot(ctx, slotID)
+	if err != nil {
+		return domain.RouteSlotStatus{}, fmt.Errorf("find route slot: %w", err)
+	}
+	if actorID != slot.OwnerID && actorID != slot.CarrierID && actorID != slot.InspectorID {
+		return domain.RouteSlotStatus{}, domain.ErrNotFound
+	}
+	return s.currentStatus(ctx, slot)
+}
+
+func (s *RouteSlot) currentStatus(ctx context.Context, slot domain.RouteSlot) (domain.RouteSlotStatus, error) {
+	state, err := s.approvals.GetApprovals(ctx, slot.ID)
+	if errors.Is(err, domain.ErrNotFound) {
+		state = domain.ApprovalState{}
+	} else if err != nil {
+		return domain.RouteSlotStatus{}, fmt.Errorf("read route slot approvals: %w", err)
+	}
+	slot.Code = ""
+	return domain.RouteSlotStatus{Slot: slot, ApprovalCount: state.Count, Ready: state.Complete()}, nil
+}
+
 func (s *RouteSlot) List(ctx context.Context, actorID, caseID uuid.UUID) ([]domain.RouteSlotStatus, error) {
 	if actorID == (uuid.UUID{}) || caseID == (uuid.UUID{}) {
 		return nil, domain.ErrNotFound
@@ -113,14 +138,11 @@ func (s *RouteSlot) List(ctx context.Context, actorID, caseID uuid.UUID) ([]doma
 		if slot.OwnerID != actorID || slot.CaseID != caseID {
 			return nil, domain.ErrNotFound
 		}
-		state, err := s.approvals.GetApprovals(ctx, slot.ID)
-		if errors.Is(err, domain.ErrNotFound) {
-			state = domain.ApprovalState{}
-		} else if err != nil {
-			return nil, fmt.Errorf("read route slot approvals: %w", err)
+		status, err := s.currentStatus(ctx, slot)
+		if err != nil {
+			return nil, err
 		}
-		slot.Code = ""
-		result = append(result, domain.RouteSlotStatus{Slot: slot, ApprovalCount: state.Count, Ready: state.Complete()})
+		result = append(result, status)
 	}
 	return result, nil
 }
