@@ -272,7 +272,7 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
 .drawer-header h2 { font-size: 27px; }
 .drawer-close { width: 34px; height: 34px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; }
 .drawer-close:hover { border-color: var(--red); color: var(--red); }
-.document-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--line); background: #f0efe7; }
+.document-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line); background: #f0efe7; }
 .document-tabs button { min-height: 46px; border: 0; border-right: 1px solid var(--line); border-bottom: 2px solid transparent; background: transparent; color: #92968e; cursor: pointer; font-size: 9px; font-weight: 750; }
 .document-tabs button:last-child { border-right: 0; }
 .document-tabs button.active { border-bottom-color: var(--green); background: var(--card); color: var(--green-dark); }
@@ -382,11 +382,11 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
 .pass-actions .button, #continue-pass { width: 100%; min-height: 46px; }
 #continue-pass { margin: 8px 0 12px; }
 #pass-issued-at { margin-top: 16px; overflow-wrap: anywhere; }
-.preview-output { display: grid; gap: 14px; margin-top: 16px; }
-.preview-output[hidden] { display: none; }
-.preview-output img { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
-.preview-output a { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; padding: 0 16px; background: var(--green-dark); color: #fff; font-size: 14px; text-decoration: none; }
-.preview-output a:hover { background: #155e54; color: #fff; }
+.pass-output { display: grid; gap: 14px; margin-top: 16px; }
+.pass-output[hidden] { display: none; }
+.pass-output img { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
+.pass-output a { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; padding: 0 16px; background: var(--green-dark); color: #fff; font-size: 14px; text-decoration: none; }
+.pass-output a:hover { background: #155e54; color: #fff; }
 .text-button { margin-top: 16px; border: 0; background: transparent; color: var(--green-dark); text-decoration: underline; cursor: pointer; font: inherit; }
 .notice { font-size: 13px; line-height: 1.5; }
 .result { font-size: 14px; }

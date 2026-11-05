@@ -9,12 +9,13 @@ const documentSteps = document.querySelectorAll(".document-pin-state span");
 const documentDrawer = document.querySelector("#document-drawer");
 let currentUsername = "";
 let flow = {};
-let previewURL = "";
 let ownedCases = [];
 let ownedCasesHasMore = false;
 let ownedCasesBusy = false;
 let currentSlotStatus = null;
 let currentPassState = null;
+let passImageURL = "";
+let passPollTimer = 0;
 let participantApprovalError = false;
 let participantApproval = readParticipantApproval();
 
@@ -126,6 +127,9 @@ function activeSlotID() {
 
 function resetRoutePass() {
   currentPassState = null;
+  window.clearTimeout(passPollTimer);
+  if (passImageURL) URL.revokeObjectURL(passImageURL);
+  passImageURL = "";
   document.querySelector("#pass-output").hidden = true;
   const image = document.querySelector("#pass-image");
   image.removeAttribute("src");
@@ -133,6 +137,7 @@ function resetRoutePass() {
   document.querySelector("#download-pass").removeAttribute("href");
   document.querySelector("#pass-issued-at").hidden = true;
   document.querySelector("#pass-status").textContent = "Состояние поставки загружается...";
+  document.querySelector("#pass-status").hidden = false;
 }
 
 function renderRoutePass() {
@@ -141,6 +146,7 @@ function renderRoutePass() {
   document.querySelector('[data-document-tab="pass"]').disabled = !slotID || !view.enabled;
   document.querySelector("#continue-pass").hidden = !slotID || !view.enabled;
   document.querySelector("#issue-pass").hidden = !view.canIssue;
+  document.querySelector("#pass-status").hidden = view.canDownload;
   document.querySelector("#pass-status").textContent = currentPassState
     ? view.status
     : slotID ? "Проверяем состояние поставки..." : "Сначала назначьте участников поставки.";
@@ -158,8 +164,12 @@ function renderRoutePass() {
     const key = `${pass.route_slot_id}:${pass.issued_at}`;
     if (image.dataset.passKey !== key) {
       const png = buildRoutePassPNG(pass);
-      image.src = png;
-      download.href = png;
+      const bytes = Uint8Array.from(atob(png.split(",")[1]), (char) => char.charCodeAt(0));
+      const imageURL = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+      if (passImageURL) URL.revokeObjectURL(passImageURL);
+      passImageURL = imageURL;
+      image.src = imageURL;
+      download.href = imageURL;
       download.download = `route-pass-${pass.route_slot_id}.png`;
       image.dataset.passKey = key;
     }
@@ -169,6 +179,7 @@ function renderRoutePass() {
   } catch (error) {
     issuedAt.hidden = true;
     output.hidden = true;
+    document.querySelector("#pass-status").hidden = false;
     document.querySelector("#pass-status").textContent = error.message;
   }
 }
@@ -184,6 +195,16 @@ async function loadRoutePass() {
   if (slotID !== activeSlotID()) return;
   currentPassState = state;
   refreshFlow();
+  scheduleParticipantPassPoll();
+  if (participantApproval && state.issued && state.pass) showDocumentPane("pass");
+}
+
+function scheduleParticipantPassPoll() {
+  window.clearTimeout(passPollTimer);
+  if (!participantApproval || !activeSlotID() || currentPassState?.issued || document.hidden) return;
+  passPollTimer = window.setTimeout(() => {
+    void loadRoutePass().catch(() => showNotice("Не удалось проверить пропуск. Обновите страницу.", true));
+  }, 15000);
 }
 
 function refreshFlow() {
@@ -193,8 +214,6 @@ function refreshFlow() {
   const hasSavedCases = !participantApproval && ownedCases.length > 0;
   document.querySelector('[data-document-tab="slot"]').disabled = !hasCase;
   document.querySelector('[data-document-tab="approval"]').disabled = !hasSlot;
-  document.querySelector('[data-document-tab="preview"]').disabled = !hasCase;
-  document.querySelector("#continue-preview").hidden = !hasCase;
   document.querySelector("#case-id").value = hasCase ? flow.case_id : "";
   document.querySelector("#slot-id").value = slotId;
   document.querySelector("#document-case").textContent = hasCase
@@ -231,7 +250,7 @@ function refreshFlow() {
       ? displayRoute(flow.origin, flow.destination)
       : hasSavedCases
         ? "Выберите дело в «Мои дела» или создайте новое."
-        : "Создайте дело и назначьте участников. PNG-черновик доступен отдельно.";
+        : "Создайте дело, назначьте участников и выпустите пропуск после подтверждений.";
   if (participantApproval) {
     document.querySelector("#document-route").textContent =
       "Поставка по ссылке";
@@ -421,6 +440,13 @@ document.querySelectorAll("[data-document-tab]").forEach((button) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeDocuments();
 });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    window.clearTimeout(passPollTimer);
+  } else if (participantApproval && activeSlotID() && !currentPassState?.issued) {
+    void loadRoutePass().catch((error) => showNotice(error.message, true));
+  }
+});
 
 function selectRoute(routeButton) {
   if (flow.case_id) {
@@ -499,7 +525,6 @@ caseForm.addEventListener("submit", (event) => {
       body: JSON.stringify(values),
     });
     clearParticipantApproval();
-    resetPreview();
     resetRoutePass();
     flow = {
       case_id: item.case_id,
@@ -613,7 +638,6 @@ document
 document
   .querySelector("#continue-slot")
   .addEventListener("click", () => showDocumentPane("slot"));
-document.querySelector("#continue-preview").addEventListener("click", () => showDocumentPane("preview"));
 
 document.querySelector("#continue-pass").addEventListener("click", () => {
   showDocumentPane("pass");
@@ -649,76 +673,7 @@ document.querySelector("#issue-pass").addEventListener("click", async () => {
   }
 });
 
-function resetPreview() {
-  if (previewURL) URL.revokeObjectURL(previewURL);
-  previewURL = "";
-  document.querySelector("#preview-output").hidden = true;
-  document.querySelector("#preview-image").removeAttribute("src");
-  document.querySelector("#download-preview").removeAttribute("href");
-  document.querySelector("#preview-status").textContent = "";
-  document.querySelector("#render-preview-button").textContent = "Создать PNG-черновик";
-}
-
-async function showPreview(id) {
-  const status = document.querySelector("#preview-status");
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const result = await request(`/api/v1/previews/${encodeURIComponent(id)}`);
-    if (result.state === "complete") {
-      if (!result.png_base64) throw new Error("Сервис не вернул PNG.");
-      const bytes = Uint8Array.from(atob(result.png_base64), (char) => char.charCodeAt(0));
-      if (bytes.length < 8 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) {
-        throw new Error("Результат не является PNG.");
-      }
-      resetPreview();
-      previewURL = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
-      document.querySelector("#preview-image").src = previewURL;
-      document.querySelector("#download-preview").href = previewURL;
-      document.querySelector("#preview-output").hidden = false;
-      status.textContent = "PNG-черновик готов. Скачайте его ниже.";
-      document.querySelector("#render-preview-button").textContent = "Проверить PNG снова";
-      return;
-    }
-    if (result.state === "failed") {
-      if (flow.preview_id === id) {
-        delete flow.preview_id;
-        saveFlow();
-      }
-      throw new Error("Renderer не смог создать PNG. Нажмите еще раз для новой попытки.");
-    }
-    status.textContent = "Renderer обрабатывает черновик...";
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  status.textContent = "Рендер еще идет. Нажмите кнопку еще раз, чтобы проверить результат.";
-}
-
-document.querySelector("#render-preview-button").addEventListener("click", async () => {
-  const button = document.querySelector("#render-preview-button");
-  button.disabled = true;
-  showNotice("");
-  try {
-    if (!flow.case_id || participantApproval) throw new Error("Откройте собственное дело, чтобы создать черновик.");
-    if (!flow.preview_id) {
-      const created = await request("/api/v1/previews", { method: "POST" });
-      const eps = buildPreviewEPS(flow);
-      const bytes = new TextEncoder().encode(eps);
-      const encoded = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
-      await request(`/api/v1/previews/${encodeURIComponent(created.preview_id)}`, {
-        method: "PUT", body: JSON.stringify({ eps_base64: encoded }),
-      });
-      flow.preview_id = created.preview_id;
-      saveFlow();
-    }
-    await showPreview(flow.preview_id);
-  } catch (error) {
-    document.querySelector("#preview-status").textContent = error.message;
-    showNotice(error.message, true);
-  } finally {
-    refreshFlow();
-    button.disabled = false;
-  }
-});
 document.querySelector("#new-case-button").addEventListener("click", () => {
-  resetPreview();
   resetRoutePass();
   flow = {};
   currentSlotStatus = null;

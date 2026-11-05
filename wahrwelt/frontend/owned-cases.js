@@ -112,7 +112,6 @@ async function openOwnedCase(entry, selectedSlotID = "", reveal = true) {
   const result = await request(`/api/v1/cases/${encodeURIComponent(caseItem.case_id)}/route-slots`);
   const statuses = result.route_slots;
   const selected = statuses.find((status) => status.slot.route_slot_id === selectedSlotID) || statuses[0] || null;
-  resetPreview();
   resetRoutePass();
   flow = {
     case_id: caseItem.case_id,

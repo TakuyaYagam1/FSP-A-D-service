@@ -5,14 +5,14 @@ function routePassViewModel(state, isOwner) {
   const ready = Boolean(state?.ready);
   let status = "Маршрут ожидает подтверждений. Пропуск еще не выпускался.";
   if (issued) {
-    status = "Пропуск выпущен. Он остается доступен после истечения временных подтверждений.";
+    status = "";
   } else if (ready) {
     status = isOwner
       ? "Маршрут готов. Выпустите пропуск для всех назначенных участников."
       : "Маршрут готов. Ожидаем выпуска пропуска владельцем дела.";
   }
   return {
-    enabled: ready || issued,
+    enabled: issued || Boolean(isOwner && ready),
     canIssue: Boolean(isOwner && ready && !issued),
     canDownload: issued,
     status,
@@ -65,7 +65,6 @@ function buildRoutePassPNG(pass) {
 
   fitted("WAHRWELT / ПРОПУСК", 96, 123, 1000, "600 29px sans-serif", "#ecf3ef");
   fitted("МАРШРУТ ГОТОВ", 96, 297, 1032, "700 83px sans-serif", "#fffefa");
-  fitted("Состояние на момент выпуска", 96, 366, 1032, "400 29px sans-serif", "#c5d9d2");
 
   fitted("ОТПРАВЛЕНИЕ", 96, 524, 1000, "600 25px sans-serif", muted);
   fitted(pass.origin, 96, 630, 1032, "600 76px sans-serif", ink);
@@ -75,7 +74,7 @@ function buildRoutePassPNG(pass) {
   rule(935);
   fitted(`Дело: ${pass.case_id}`, 96, 1016, 1032, "500 35px monospace", ink);
   fitted(`Поставка: ${pass.route_slot_id}`, 96, 1080, 1032, "500 35px monospace", ink);
-  fitted(`Операция: ${kind}`, 96, 1160, 1032, "600 30px sans-serif", ink);
+  fitted(kind, 96, 1160, 1032, "600 30px sans-serif", ink);
   fitted(`Перевозчик: ${pass.carrier_username}`, 96, 1223, 1032, "500 31px sans-serif", ink);
   fitted(`Инспектор: ${pass.inspector_username}`, 96, 1275, 1032, "500 31px sans-serif", ink);
 

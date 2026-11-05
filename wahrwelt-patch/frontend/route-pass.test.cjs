@@ -1,6 +1,29 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { buildRoutePassPNG, routePassViewModel } = require("./route-pass.js");
+
+test("the last and only document pane after approvals is the issued pass", () => {
+  const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  assert.equal((html.match(/data-document-tab=/g) || []).length, 4);
+  assert.doesNotMatch(html, /data-document-tab="preview"|data-document-pane="preview"|id="continue-preview"/);
+  assert.match(html, /data-document-tab="pass"/);
+  assert.doesNotMatch(html, /Владелец выпускает пропуск после готовности маршрута/);
+});
+
+test("the served pass renderer can be read by the nginx worker", () => {
+  const mode = fs.statSync(path.join(__dirname, "route-pass.js")).mode;
+  assert.ok(mode & 0o004, "renderer must be world-readable inside the nginx image");
+});
+
+test("issued PNG uses a blob URL permitted by the existing CSP", () => {
+  const nginx = fs.readFileSync(path.join(__dirname, "nginx.conf"), "utf8");
+  const app = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
+  assert.match(nginx, /img-src 'self' blob:/);
+  assert.match(app, /URL\.createObjectURL/);
+  assert.doesNotMatch(app, /image\.src = png;/);
+});
 
 const pass = {
   route_slot_id: "123e4567-e89b-12d3-a456-426614174000",
@@ -26,7 +49,7 @@ test("step 4 stays locked until ready, then owner alone may issue", () => {
   assert.equal(ownerReady.canDownload, false);
 
   const participantReady = routePassViewModel({ ready: true, issued: false }, false);
-  assert.equal(participantReady.enabled, true);
+  assert.equal(participantReady.enabled, false);
   assert.equal(participantReady.canIssue, false);
   assert.match(participantReady.status, /владельц/);
 });
@@ -38,7 +61,7 @@ test("issued pass stays available when approvals expire or the page reloads", ()
     assert.equal(view.enabled, true);
     assert.equal(view.canIssue, false);
     assert.equal(view.canDownload, true);
-    assert.match(view.status, /выпущен/);
+    assert.equal(view.status, "");
   }
 });
 
@@ -65,6 +88,9 @@ test("PNG contains only server issuance metadata, never the slot code", () => {
       assert.ok(drawn.includes(label), `missing ${label}: ${drawn}`);
     }
     assert.ok(!drawn.includes("private-code"), drawn);
+    assert.ok(!drawn.includes("Состояние на момент выпуска"), drawn);
+    assert.ok(text.includes("ВВОЗ"), drawn);
+    assert.ok(!drawn.includes("Операция:"), drawn);
     assert.ok(!drawn.includes("ПОДПИС"), drawn);
     assert.ok(!drawn.includes("НЕ СОГЛАСОВАНО"), drawn);
   } finally {
