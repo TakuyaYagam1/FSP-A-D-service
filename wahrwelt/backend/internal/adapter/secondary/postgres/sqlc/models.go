@@ -118,6 +118,11 @@ type Quota struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type RoutePass struct {
+	RouteSlotID uuid.UUID          `json:"route_slot_id"`
+	IssuedAt    pgtype.Timestamptz `json:"issued_at"`
+}
+
 type RouteSlot struct {
 	ID          uuid.UUID          `json:"id"`
 	CaseID      uuid.UUID          `json:"case_id"`
