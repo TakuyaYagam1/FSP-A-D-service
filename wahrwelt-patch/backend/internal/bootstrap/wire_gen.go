@@ -57,7 +57,8 @@ func initializeApp(contextContext context.Context, configConfig config.Config) (
 	preview := providePreviewFiles()
 	usecasePreview := usecase.NewPreview(store, preview)
 	gatePass := usecase.NewGatePass(store, store)
-	handler := provideHandler(configConfig, auth, usecaseCase, routeSlot, manifest, certificate, invoice, inspection, license, contract, quota, waybill, usecasePreview, gatePass)
+	routePass := usecase.NewRoutePass(routeSlot, store)
+	handler := provideHandler(configConfig, auth, usecaseCase, routeSlot, manifest, certificate, invoice, inspection, license, contract, quota, waybill, usecasePreview, gatePass, routePass)
 	securityHandler := middleware.NewSecurityHandler(auth, license)
 	httpHandler, err := v1.NewServer(handler, securityHandler)
 	if err != nil {
@@ -77,10 +78,10 @@ func initializeApp(contextContext context.Context, configConfig config.Config) (
 // wire.go:
 
 var appSet = wire.NewSet(postgres.NewPool, postgres.NewInvoiceSearchPool, postgres.NewStore, redis.New, registry.NewClient, password.New, provideArchiveFiles,
-	providePreviewFiles, usecase.NewCase, usecase.NewManifest, usecase.NewCertificate, usecase.NewInvoice, usecase.NewInspection, usecase.NewContract, usecase.NewQuota, usecase.NewWaybill, usecase.NewPreview, usecase.NewGatePass, provideLicenses,
+	providePreviewFiles, usecase.NewCase, usecase.NewManifest, usecase.NewCertificate, usecase.NewInvoice, usecase.NewInspection, usecase.NewContract, usecase.NewQuota, usecase.NewWaybill, usecase.NewPreview, usecase.NewGatePass, usecase.NewRoutePass, provideLicenses,
 	provideAuth,
 	provideRouteSlots,
-	provideHandler, middleware.NewSecurityHandler, v1.NewServer, NewApp, wire.Bind(new(outbound.UserRepository), new(*postgres.Store)), wire.Bind(new(outbound.CaseRepository), new(*postgres.Store)), wire.Bind(new(outbound.RouteSlotRepository), new(*postgres.Store)), wire.Bind(new(outbound.ManifestRepository), new(*postgres.Store)), wire.Bind(new(outbound.CertificateRepository), new(*postgres.Store)), wire.Bind(new(outbound.InvoiceRepository), new(*postgres.Store)), wire.Bind(new(outbound.InspectionRepository), new(*postgres.Store)), wire.Bind(new(outbound.LicenseRepository), new(*postgres.Store)), wire.Bind(new(outbound.ContractRepository), new(*postgres.Store)), wire.Bind(new(outbound.QuotaRepository), new(*postgres.Store)), wire.Bind(new(outbound.WaybillRepository), new(*postgres.Store)), wire.Bind(new(outbound.PreviewRepository), new(*postgres.Store)), wire.Bind(new(outbound.GatePassRepository), new(*postgres.Store)), wire.Bind(new(outbound.WaybillFiles), new(*filesystem.Archive)), wire.Bind(new(outbound.PreviewFiles), new(*filesystem.Preview)), wire.Bind(new(outbound.CertificateVerifier), new(*registry.Client)), wire.Bind(new(outbound.SessionStore), new(*redis.Store)), wire.Bind(new(outbound.ApprovalStore), new(*redis.Store)), wire.Bind(new(outbound.PasswordHasher), new(*password.Hasher)),
+	provideHandler, middleware.NewSecurityHandler, v1.NewServer, NewApp, wire.Bind(new(outbound.UserRepository), new(*postgres.Store)), wire.Bind(new(outbound.CaseRepository), new(*postgres.Store)), wire.Bind(new(outbound.RouteSlotRepository), new(*postgres.Store)), wire.Bind(new(outbound.ManifestRepository), new(*postgres.Store)), wire.Bind(new(outbound.CertificateRepository), new(*postgres.Store)), wire.Bind(new(outbound.InvoiceRepository), new(*postgres.Store)), wire.Bind(new(outbound.InspectionRepository), new(*postgres.Store)), wire.Bind(new(outbound.LicenseRepository), new(*postgres.Store)), wire.Bind(new(outbound.ContractRepository), new(*postgres.Store)), wire.Bind(new(outbound.QuotaRepository), new(*postgres.Store)), wire.Bind(new(outbound.WaybillRepository), new(*postgres.Store)), wire.Bind(new(outbound.PreviewRepository), new(*postgres.Store)), wire.Bind(new(outbound.GatePassRepository), new(*postgres.Store)), wire.Bind(new(outbound.RoutePassRepository), new(*postgres.Store)), wire.Bind(new(outbound.WaybillFiles), new(*filesystem.Archive)), wire.Bind(new(outbound.PreviewFiles), new(*filesystem.Preview)), wire.Bind(new(outbound.CertificateVerifier), new(*registry.Client)), wire.Bind(new(outbound.SessionStore), new(*redis.Store)), wire.Bind(new(outbound.ApprovalStore), new(*redis.Store)), wire.Bind(new(outbound.PasswordHasher), new(*password.Hasher)),
 )
 
 func provideAuth(cfg config.Config, users outbound.UserRepository, sessions outbound.SessionStore, hasher outbound.PasswordHasher) *usecase.Auth {
@@ -103,6 +104,6 @@ func providePreviewFiles() *filesystem.Preview {
 	return filesystem.NewPreview("/var/lib/wahrwelt/preview")
 }
 
-func provideHandler(cfg config.Config, auth *usecase.Auth, cases *usecase.Case, slots *usecase.RouteSlot, manifests *usecase.Manifest, certificates *usecase.Certificate, invoices *usecase.Invoice, inspections *usecase.Inspection, licenses *usecase.License, contracts *usecase.Contract, quota *usecase.Quota, waybill *usecase.Waybill, preview *usecase.Preview, gatePass *usecase.GatePass) *v1.Handler {
-	return v1.NewHandler(auth, cases, slots, v1.FeatureSet{Manifest: manifests, Certificate: certificates, Invoice: invoices, Inspection: inspections, License: licenses, Contract: contracts, Quota: quota, Waybill: waybill, Preview: preview, GatePass: gatePass}, cfg.SessionTTL, cfg.CookieSecure)
+func provideHandler(cfg config.Config, auth *usecase.Auth, cases *usecase.Case, slots *usecase.RouteSlot, manifests *usecase.Manifest, certificates *usecase.Certificate, invoices *usecase.Invoice, inspections *usecase.Inspection, licenses *usecase.License, contracts *usecase.Contract, quota *usecase.Quota, waybill *usecase.Waybill, preview *usecase.Preview, gatePass *usecase.GatePass, routePass *usecase.RoutePass) *v1.Handler {
+	return v1.NewHandler(auth, cases, slots, v1.FeatureSet{Manifest: manifests, Certificate: certificates, Invoice: invoices, Inspection: inspections, License: licenses, Contract: contracts, Quota: quota, Waybill: waybill, Preview: preview, GatePass: gatePass, RoutePass: routePass}, cfg.SessionTTL, cfg.CookieSecure)
 }

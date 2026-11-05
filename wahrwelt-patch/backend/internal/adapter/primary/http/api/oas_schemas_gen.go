@@ -2710,6 +2710,52 @@ func (o OptInt64) Or(d int64) int64 {
 	return d
 }
 
+// NewOptRoutePass returns new OptRoutePass with value set to v.
+func NewOptRoutePass(v RoutePass) OptRoutePass {
+	return OptRoutePass{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRoutePass is optional RoutePass.
+type OptRoutePass struct {
+	Value RoutePass
+	Set   bool
+}
+
+// IsSet returns true if OptRoutePass was set.
+func (o OptRoutePass) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRoutePass) Reset() {
+	var v RoutePass
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRoutePass) SetTo(v RoutePass) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRoutePass) Get() (v RoutePass, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRoutePass) Or(d RoutePass) RoutePass {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -3269,6 +3315,183 @@ func (s *RevisionSummaryStatus) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/RoutePass
+type RoutePass struct {
+	RouteSlotID       string        `json:"route_slot_id"`
+	CaseID            string        `json:"case_id"`
+	Kind              RoutePassKind `json:"kind"`
+	Origin            string        `json:"origin"`
+	Destination       string        `json:"destination"`
+	CarrierUsername   string        `json:"carrier_username"`
+	InspectorUsername string        `json:"inspector_username"`
+	IssuedAt          time.Time     `json:"issued_at"`
+}
+
+// GetRouteSlotID returns the value of RouteSlotID.
+func (s *RoutePass) GetRouteSlotID() string {
+	return s.RouteSlotID
+}
+
+// GetCaseID returns the value of CaseID.
+func (s *RoutePass) GetCaseID() string {
+	return s.CaseID
+}
+
+// GetKind returns the value of Kind.
+func (s *RoutePass) GetKind() RoutePassKind {
+	return s.Kind
+}
+
+// GetOrigin returns the value of Origin.
+func (s *RoutePass) GetOrigin() string {
+	return s.Origin
+}
+
+// GetDestination returns the value of Destination.
+func (s *RoutePass) GetDestination() string {
+	return s.Destination
+}
+
+// GetCarrierUsername returns the value of CarrierUsername.
+func (s *RoutePass) GetCarrierUsername() string {
+	return s.CarrierUsername
+}
+
+// GetInspectorUsername returns the value of InspectorUsername.
+func (s *RoutePass) GetInspectorUsername() string {
+	return s.InspectorUsername
+}
+
+// GetIssuedAt returns the value of IssuedAt.
+func (s *RoutePass) GetIssuedAt() time.Time {
+	return s.IssuedAt
+}
+
+// SetRouteSlotID sets the value of RouteSlotID.
+func (s *RoutePass) SetRouteSlotID(val string) {
+	s.RouteSlotID = val
+}
+
+// SetCaseID sets the value of CaseID.
+func (s *RoutePass) SetCaseID(val string) {
+	s.CaseID = val
+}
+
+// SetKind sets the value of Kind.
+func (s *RoutePass) SetKind(val RoutePassKind) {
+	s.Kind = val
+}
+
+// SetOrigin sets the value of Origin.
+func (s *RoutePass) SetOrigin(val string) {
+	s.Origin = val
+}
+
+// SetDestination sets the value of Destination.
+func (s *RoutePass) SetDestination(val string) {
+	s.Destination = val
+}
+
+// SetCarrierUsername sets the value of CarrierUsername.
+func (s *RoutePass) SetCarrierUsername(val string) {
+	s.CarrierUsername = val
+}
+
+// SetInspectorUsername sets the value of InspectorUsername.
+func (s *RoutePass) SetInspectorUsername(val string) {
+	s.InspectorUsername = val
+}
+
+// SetIssuedAt sets the value of IssuedAt.
+func (s *RoutePass) SetIssuedAt(val time.Time) {
+	s.IssuedAt = val
+}
+
+type RoutePassKind string
+
+const (
+	RoutePassKindImport  RoutePassKind = "import"
+	RoutePassKindExport  RoutePassKind = "export"
+	RoutePassKindService RoutePassKind = "service"
+)
+
+// AllValues returns all RoutePassKind values.
+func (RoutePassKind) AllValues() []RoutePassKind {
+	return []RoutePassKind{
+		RoutePassKindImport,
+		RoutePassKindExport,
+		RoutePassKindService,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RoutePassKind) MarshalText() ([]byte, error) {
+	switch s {
+	case RoutePassKindImport:
+		return []byte(s), nil
+	case RoutePassKindExport:
+		return []byte(s), nil
+	case RoutePassKindService:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RoutePassKind) UnmarshalText(data []byte) error {
+	switch RoutePassKind(data) {
+	case RoutePassKindImport:
+		*s = RoutePassKindImport
+		return nil
+	case RoutePassKindExport:
+		*s = RoutePassKindExport
+		return nil
+	case RoutePassKindService:
+		*s = RoutePassKindService
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/RoutePassState
+type RoutePassState struct {
+	Ready  bool         `json:"ready"`
+	Issued bool         `json:"issued"`
+	Pass   OptRoutePass `json:"pass"`
+}
+
+// GetReady returns the value of Ready.
+func (s *RoutePassState) GetReady() bool {
+	return s.Ready
+}
+
+// GetIssued returns the value of Issued.
+func (s *RoutePassState) GetIssued() bool {
+	return s.Issued
+}
+
+// GetPass returns the value of Pass.
+func (s *RoutePassState) GetPass() OptRoutePass {
+	return s.Pass
+}
+
+// SetReady sets the value of Ready.
+func (s *RoutePassState) SetReady(val bool) {
+	s.Ready = val
+}
+
+// SetIssued sets the value of Issued.
+func (s *RoutePassState) SetIssued(val bool) {
+	s.Issued = val
+}
+
+// SetPass sets the value of Pass.
+func (s *RoutePassState) SetPass(val OptRoutePass) {
+	s.Pass = val
 }
 
 // Ref: #/components/schemas/RouteSlot

@@ -212,6 +212,12 @@ type Handler interface {
 	//
 	// GET /api/v1/quotas/{quota_number}/summary
 	GetQuotaSummary(ctx context.Context, params GetQuotaSummaryParams) (*QuotaSummary, error)
+	// GetRoutePass implements getRoutePass operation.
+	//
+	// Read route pass readiness and issued document for an assigned account.
+	//
+	// GET /api/v1/route-slots/{slot_id}/pass
+	GetRoutePass(ctx context.Context, params GetRoutePassParams) (*RoutePassState, error)
 	// GetRouteSlotCode implements getRouteSlotCode operation.
 	//
 	// Read the slot code as owner or approved participant.
@@ -242,6 +248,12 @@ type Handler interface {
 	//
 	// POST /api/v1/licenses/{license_number}/tokens
 	IssueLicenseToken(ctx context.Context, req *LicenseTokenRequest, params IssueLicenseTokenParams) (*LicenseTokenHeaders, error)
+	// IssueRoutePass implements issueRoutePass operation.
+	//
+	// Issue one pass as the owner of a ready route slot.
+	//
+	// POST /api/v1/route-slots/{slot_id}/pass
+	IssueRoutePass(ctx context.Context, params IssueRoutePassParams) (*RoutePassState, error)
 	// ListCaseRouteSlots implements listCaseRouteSlots operation.
 	//
 	// Read route slots and current approval counts for an owned case.

@@ -233,6 +233,12 @@ type Invoker interface {
 	//
 	// GET /api/v1/quotas/{quota_number}/summary
 	GetQuotaSummary(ctx context.Context, params GetQuotaSummaryParams) (*QuotaSummary, error)
+	// GetRoutePass invokes getRoutePass operation.
+	//
+	// Read route pass readiness and issued document for an assigned account.
+	//
+	// GET /api/v1/route-slots/{slot_id}/pass
+	GetRoutePass(ctx context.Context, params GetRoutePassParams) (*RoutePassState, error)
 	// GetRouteSlotCode invokes getRouteSlotCode operation.
 	//
 	// Read the slot code as owner or approved participant.
@@ -263,6 +269,12 @@ type Invoker interface {
 	//
 	// POST /api/v1/licenses/{license_number}/tokens
 	IssueLicenseToken(ctx context.Context, request *LicenseTokenRequest, params IssueLicenseTokenParams) (*LicenseTokenHeaders, error)
+	// IssueRoutePass invokes issueRoutePass operation.
+	//
+	// Issue one pass as the owner of a ready route slot.
+	//
+	// POST /api/v1/route-slots/{slot_id}/pass
+	IssueRoutePass(ctx context.Context, params IssueRoutePassParams) (*RoutePassState, error)
 	// ListCaseRouteSlots invokes listCaseRouteSlots operation.
 	//
 	// Read route slots and current approval counts for an owned case.
@@ -4486,6 +4498,138 @@ func (c *Client) sendGetQuotaSummary(ctx context.Context, params GetQuotaSummary
 	return result, nil
 }
 
+// GetRoutePass invokes getRoutePass operation.
+//
+// Read route pass readiness and issued document for an assigned account.
+//
+// GET /api/v1/route-slots/{slot_id}/pass
+func (c *Client) GetRoutePass(ctx context.Context, params GetRoutePassParams) (*RoutePassState, error) {
+	res, err := c.sendGetRoutePass(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetRoutePass(ctx context.Context, params GetRoutePassParams) (res *RoutePassState, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getRoutePass"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/route-slots/{slot_id}/pass"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetRoutePassOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/route-slots/"
+	{
+		// Encode "slot_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "slot_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SlotID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pass"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	{
+		type bitset = [1]uint8
+		var satisfied bitset
+		{
+			stage = "Security:SessionCookie"
+			switch err := c.securitySessionCookie(ctx, GetRoutePassOperation, r); {
+			case err == nil: // if NO error
+				satisfied[0] |= 1 << 0
+			case errors.Is(err, ogenerrors.ErrSkipClientSecurity):
+				// Skip this security.
+			default:
+				return res, errors.Wrap(err, "security \"SessionCookie\"")
+			}
+		}
+
+		if ok := func() bool {
+		nextRequirement:
+			for _, requirement := range []bitset{
+				{0b00000001},
+			} {
+				for i, mask := range requirement {
+					if satisfied[i]&mask != mask {
+						continue nextRequirement
+					}
+				}
+				return true
+			}
+			return false
+		}(); !ok {
+			return res, ogenerrors.ErrSecurityRequirementIsNotSatisfied
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer func() {
+		// Drain the body to EOF before closing, so the underlying
+		// connection can be reused by the Transport regardless of the
+		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
+		_, _ = io.Copy(io.Discard, body)
+		_ = body.Close()
+	}()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetRoutePassResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetRouteSlotCode invokes getRouteSlotCode operation.
 //
 // Read the slot code as owner or approved participant.
@@ -5056,6 +5200,138 @@ func (c *Client) sendIssueLicenseToken(ctx context.Context, request *LicenseToke
 
 	stage = "DecodeResponse"
 	result, err := decodeIssueLicenseTokenResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// IssueRoutePass invokes issueRoutePass operation.
+//
+// Issue one pass as the owner of a ready route slot.
+//
+// POST /api/v1/route-slots/{slot_id}/pass
+func (c *Client) IssueRoutePass(ctx context.Context, params IssueRoutePassParams) (*RoutePassState, error) {
+	res, err := c.sendIssueRoutePass(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendIssueRoutePass(ctx context.Context, params IssueRoutePassParams) (res *RoutePassState, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("issueRoutePass"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/v1/route-slots/{slot_id}/pass"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, IssueRoutePassOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/route-slots/"
+	{
+		// Encode "slot_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "slot_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SlotID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pass"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	{
+		type bitset = [1]uint8
+		var satisfied bitset
+		{
+			stage = "Security:SessionCookie"
+			switch err := c.securitySessionCookie(ctx, IssueRoutePassOperation, r); {
+			case err == nil: // if NO error
+				satisfied[0] |= 1 << 0
+			case errors.Is(err, ogenerrors.ErrSkipClientSecurity):
+				// Skip this security.
+			default:
+				return res, errors.Wrap(err, "security \"SessionCookie\"")
+			}
+		}
+
+		if ok := func() bool {
+		nextRequirement:
+			for _, requirement := range []bitset{
+				{0b00000001},
+			} {
+				for i, mask := range requirement {
+					if satisfied[i]&mask != mask {
+						continue nextRequirement
+					}
+				}
+				return true
+			}
+			return false
+		}(); !ok {
+			return res, ogenerrors.ErrSecurityRequirementIsNotSatisfied
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer func() {
+		// Drain the body to EOF before closing, so the underlying
+		// connection can be reused by the Transport regardless of the
+		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
+		_, _ = io.Copy(io.Discard, body)
+		_ = body.Close()
+	}()
+
+	stage = "DecodeResponse"
+	result, err := decodeIssueRoutePassResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

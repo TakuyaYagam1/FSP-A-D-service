@@ -280,6 +280,49 @@ paths:
                 $ref: '#/components/schemas/RouteSlotCode'
         default:
           $ref: '#/components/responses/Error'
+  /api/v1/route-slots/{slot_id}/pass:
+    get:
+      operationId: getRoutePass
+      summary: Read route pass readiness and issued document for an assigned account
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Current readiness and persisted pass state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutePassState'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: issueRoutePass
+      summary: Issue one pass as the owner of a ready route slot
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+      responses:
+        '200':
+          description: Issued pass; repeated requests return the same issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutePassState'
+        default:
+          $ref: '#/components/responses/Error'
   /api/v1/manifests:
     post:
       operationId: createManifest
@@ -1269,6 +1312,40 @@ components:
           minimum: 0
         ready:
           type: boolean
+    RoutePassState:
+      type: object
+      required: [ready, issued]
+      properties:
+        ready:
+          type: boolean
+        issued:
+          type: boolean
+        pass:
+          $ref: '#/components/schemas/RoutePass'
+    RoutePass:
+      type: object
+      required: [route_slot_id, case_id, kind, origin, destination, carrier_username, inspector_username, issued_at]
+      properties:
+        route_slot_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        case_id:
+          type: string
+          pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        kind:
+          type: string
+          enum: [import, export, service]
+        origin:
+          type: string
+        destination:
+          type: string
+        carrier_username:
+          type: string
+        inspector_username:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
     CreateRouteSlotRequest:
       type: object
       additionalProperties: false

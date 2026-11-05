@@ -456,6 +456,19 @@ func encodeGetQuotaSummaryResponse(response *QuotaSummary, w http.ResponseWriter
 	return nil
 }
 
+func encodeGetRoutePassResponse(response *RoutePassState, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
 func encodeGetRouteSlotCodeResponse(response *RouteSlotCode, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
@@ -530,6 +543,19 @@ func encodeIssueLicenseTokenResponse(response *LicenseTokenHeaders, w http.Respo
 
 	e := new(jx.Encoder)
 	response.Response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeIssueRoutePassResponse(response *RoutePassState, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+
+	e := new(jx.Encoder)
+	response.Encode(e)
 	if _, err := e.WriteTo(w); err != nil {
 		return errors.Wrap(err, "write")
 	}

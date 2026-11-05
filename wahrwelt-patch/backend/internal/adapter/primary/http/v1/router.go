@@ -32,6 +32,7 @@ type FeatureSet struct {
 	Waybill     *usecase.Waybill
 	Preview     *usecase.Preview
 	GatePass    *usecase.GatePass
+	RoutePass   *usecase.RoutePass
 }
 
 func NewHandler(auth *usecase.Auth, cases *usecase.Case, routeSlots *usecase.RouteSlot, features FeatureSet, sessionTTL time.Duration, cookieSecure bool) *Handler {
@@ -52,6 +53,9 @@ func NewServer(handler *Handler, security *middleware.SecurityHandler) (http.Han
 	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		request.Body = http.MaxBytesReader(writer, request.Body, 2<<20)
+		if strings.HasPrefix(request.URL.Path, "/api/v1/route-slots/") && strings.HasSuffix(request.URL.Path, "/pass") {
+			writer.Header().Set("Cache-Control", "no-store")
+		}
 		if strings.HasPrefix(request.URL.Path, "/internal/certificates/") && !loopbackRequest(request.RemoteAddr) {
 			http.NotFound(writer, request)
 			return

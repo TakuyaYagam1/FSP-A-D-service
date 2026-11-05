@@ -319,6 +319,15 @@ func (UnimplementedHandler) GetQuotaSummary(ctx context.Context, params GetQuota
 	return r, ht.ErrNotImplemented
 }
 
+// GetRoutePass implements getRoutePass operation.
+//
+// Read route pass readiness and issued document for an assigned account.
+//
+// GET /api/v1/route-slots/{slot_id}/pass
+func (UnimplementedHandler) GetRoutePass(ctx context.Context, params GetRoutePassParams) (r *RoutePassState, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetRouteSlotCode implements getRouteSlotCode operation.
 //
 // Read the slot code as owner or approved participant.
@@ -361,6 +370,15 @@ func (UnimplementedHandler) Health(ctx context.Context) (r *Health, _ error) {
 //
 // POST /api/v1/licenses/{license_number}/tokens
 func (UnimplementedHandler) IssueLicenseToken(ctx context.Context, req *LicenseTokenRequest, params IssueLicenseTokenParams) (r *LicenseTokenHeaders, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// IssueRoutePass implements issueRoutePass operation.
+//
+// Issue one pass as the owner of a ready route slot.
+//
+// POST /api/v1/route-slots/{slot_id}/pass
+func (UnimplementedHandler) IssueRoutePass(ctx context.Context, params IssueRoutePassParams) (r *RoutePassState, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
