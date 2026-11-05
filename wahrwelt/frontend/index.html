@@ -6,10 +6,11 @@
     <title>Wahrwelt</title>
     <meta name="description" content="Дела поставок Wahrwelt: маршруты, участники и текущее состояние подтверждений.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/styles.css?v=owner-cases">
+    <link rel="stylesheet" href="/styles.css?v=route-pass">
     <script src="/document-preview.js" defer></script>
-    <script src="/owned-cases.js?v=owner-cases" defer></script>
-    <script src="/app.js?v=owner-cases" defer></script>
+    <script src="/route-pass.js?v=route-pass" defer></script>
+    <script src="/owned-cases.js?v=route-pass" defer></script>
+    <script src="/app.js?v=route-pass" defer></script>
   </head>
   <body class="map-page">
     <p id="startup-status" class="startup-status" role="status">Загрузка сервиса. Если страница не открывается, <a href="/?reload=1">обновите ее</a> или <a href="/login">войдите заново</a>.</p>
@@ -69,6 +70,7 @@
             <span class="active"><b>01</b>Дело</span>
             <span><b>02</b>Назначения</span>
             <span><b>03</b>Согласование</span>
+            <span><b>04</b>Пропуск</span>
           </div>
           <dl class="document-meta">
             <div><dt>Дело</dt><dd id="document-case">Не создано</dd></div>
@@ -87,6 +89,7 @@
             <button class="active" type="button" data-document-tab="case">1. Дело</button>
             <button type="button" data-document-tab="slot" disabled>2. Назначения</button>
             <button type="button" data-document-tab="approval" disabled>3. Согласование</button>
+            <button type="button" data-document-tab="pass" disabled>4. Пропуск</button>
             <button type="button" data-document-tab="preview" disabled>Черновик PNG</button>
           </nav>
 
@@ -169,6 +172,7 @@
                 <p id="link-notice" class="link-notice" role="status" aria-live="polite"></p>
               </section>
               <p class="form-help">Создатель дела получает код сразу. Для назначенных перевозчика и инспектора он откроется после подтверждения маршрута. Подтверждения временные: по умолчанию 15 минут с первой подписи.</p>
+              <button class="button" id="continue-pass" type="button" hidden>К пропуску</button>
               <button class="button button-secondary" id="continue-preview" type="button" hidden>К черновику PNG</button>
               <details class="approval-details">
                 <summary>Подтверждение маршрута</summary>
@@ -184,6 +188,21 @@
                 <summary>Идентификаторы дела и поставки</summary>
                 <p class="form-help" id="document-ids"></p>
               </details>
+            </section>
+
+            <section class="document-pane" data-document-pane="pass" aria-labelledby="pass-heading" hidden>
+              <div class="pane-heading"><h3 id="pass-heading">Пропуск маршрута</h3><span>04</span></div>
+              <p id="pass-status" class="form-help" role="status" aria-live="polite">Состояние поставки загружается...</p>
+              <p class="form-help">Владелец выпускает пропуск после готовности маршрута. Он сохраняется, даже когда временные подтверждения истекут. Назначенные перевозчик и инспектор скачивают его по своей ссылке после входа в аккаунт.</p>
+              <div class="pass-actions">
+                <button class="button button-secondary" id="refresh-pass" type="button">Обновить состояние</button>
+                <button class="button" id="issue-pass" type="button" hidden>Выпустить пропуск</button>
+              </div>
+              <p id="pass-issued-at" class="form-help" hidden></p>
+              <div id="pass-output" class="preview-output" hidden>
+                <img id="pass-image" alt="Пропуск маршрута, выпущенный владельцем">
+                <a id="download-pass" class="button button-secondary" download="route-pass.png">Скачать пропуск PNG</a>
+              </div>
             </section>
 
             <section class="document-pane" data-document-pane="preview" aria-labelledby="preview-heading" hidden>

@@ -113,6 +113,7 @@ async function openOwnedCase(entry, selectedSlotID = "", reveal = true) {
   const statuses = result.route_slots;
   const selected = statuses.find((status) => status.slot.route_slot_id === selectedSlotID) || statuses[0] || null;
   resetPreview();
+  resetRoutePass();
   flow = {
     case_id: caseItem.case_id,
     kind: caseItem.kind,
@@ -133,6 +134,7 @@ async function openOwnedCase(entry, selectedSlotID = "", reveal = true) {
     showDocumentPane(selected ? "approval" : "slot");
     openDocuments();
   }
+  if (selected) void loadRoutePass().catch((error) => showNotice(error.message, true));
 }
 
 async function refreshOwnedCaseStatus() {
@@ -146,6 +148,7 @@ async function refreshOwnedCaseStatus() {
     renderOwnedCases();
   }
   renderOwnerStatus();
+  await loadRoutePass();
 }
 
 document.querySelector("#open-case-list").addEventListener("click", () => {

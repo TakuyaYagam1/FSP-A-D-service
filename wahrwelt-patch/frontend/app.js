@@ -14,6 +14,7 @@ let ownedCases = [];
 let ownedCasesHasMore = false;
 let ownedCasesBusy = false;
 let currentSlotStatus = null;
+let currentPassState = null;
 let participantApprovalError = false;
 let participantApproval = readParticipantApproval();
 
@@ -119,6 +120,72 @@ function loginPathForCurrentPage() {
   return loginURL.pathname + loginURL.search;
 }
 
+function activeSlotID() {
+  return participantApproval?.slotId || flow.route_slot_id || "";
+}
+
+function resetRoutePass() {
+  currentPassState = null;
+  document.querySelector("#pass-output").hidden = true;
+  const image = document.querySelector("#pass-image");
+  image.removeAttribute("src");
+  delete image.dataset.passKey;
+  document.querySelector("#download-pass").removeAttribute("href");
+  document.querySelector("#pass-issued-at").hidden = true;
+  document.querySelector("#pass-status").textContent = "Состояние поставки загружается...";
+}
+
+function renderRoutePass() {
+  const slotID = activeSlotID();
+  const view = routePassViewModel(currentPassState, !participantApproval && Boolean(flow.case_id));
+  document.querySelector('[data-document-tab="pass"]').disabled = !slotID || !view.enabled;
+  document.querySelector("#continue-pass").hidden = !slotID || !view.enabled;
+  document.querySelector("#issue-pass").hidden = !view.canIssue;
+  document.querySelector("#pass-status").textContent = currentPassState
+    ? view.status
+    : slotID ? "Проверяем состояние поставки..." : "Сначала назначьте участников поставки.";
+  const output = document.querySelector("#pass-output");
+  const issuedAt = document.querySelector("#pass-issued-at");
+  if (!view.canDownload) {
+    output.hidden = true;
+    issuedAt.hidden = true;
+    return;
+  }
+  const pass = currentPassState.pass;
+  const image = document.querySelector("#pass-image");
+  const download = document.querySelector("#download-pass");
+  try {
+    const key = `${pass.route_slot_id}:${pass.issued_at}`;
+    if (image.dataset.passKey !== key) {
+      const png = buildRoutePassPNG(pass);
+      image.src = png;
+      download.href = png;
+      download.download = `route-pass-${pass.route_slot_id}.png`;
+      image.dataset.passKey = key;
+    }
+    issuedAt.textContent = `Выпущен: ${new Date(pass.issued_at).toISOString().replace("T", " ").slice(0, 16)} UTC`;
+    issuedAt.hidden = false;
+    output.hidden = false;
+  } catch (error) {
+    issuedAt.hidden = true;
+    output.hidden = true;
+    document.querySelector("#pass-status").textContent = error.message;
+  }
+}
+
+async function loadRoutePass() {
+  const slotID = activeSlotID();
+  if (!slotID) {
+    resetRoutePass();
+    refreshFlow();
+    return;
+  }
+  const state = await request(`/api/v1/route-slots/${encodeURIComponent(slotID)}/pass`, { cache: "no-store" });
+  if (slotID !== activeSlotID()) return;
+  currentPassState = state;
+  refreshFlow();
+}
+
 function refreshFlow() {
   const hasCase = !participantApproval && Boolean(flow.case_id);
   const slotId = participantApproval?.slotId || flow.route_slot_id || "";
@@ -198,7 +265,8 @@ function refreshFlow() {
   refreshParticipantLinks();
   refreshApproval();
   renderOwnerStatus();
-  setDocumentStep(hasSlot ? 2 : hasCase ? 1 : 0);
+  renderRoutePass();
+  setDocumentStep(currentPassState?.issued ? 3 : hasSlot ? 2 : hasCase ? 1 : 0);
 }
 
 function refreshApproval() {
@@ -244,10 +312,10 @@ async function request(path, options = {}) {
         "Проверьте поля формы. Участники должны быть разными пользователями.",
       unauthorized: "Сессия завершена. Войдите в аккаунт заново.",
       forbidden:
-        "Текущий аккаунт не назначен перевозчиком или инспектором этой поставки.",
+        "У текущего аккаунта нет права на это действие.",
       not_found: "Дело или поставка недоступны текущему аккаунту.",
       approval_not_ready:
-        "Код пока недоступен. Нужны подтверждения назначенных перевозчика и инспектора.",
+        "Маршрут пока не готов к этому действию. Обновите подтверждения поставки.",
       conflict:
         "Операция недоступна в текущем состоянии. Проверьте предыдущий шаг.",
     };
@@ -343,9 +411,12 @@ document
   .querySelector("#close-documents")
   .addEventListener("click", closeDocuments);
 document.querySelectorAll("[data-document-tab]").forEach((button) => {
-  button.addEventListener("click", () =>
-    showDocumentPane(button.dataset.documentTab),
-  );
+  button.addEventListener("click", () => {
+    showDocumentPane(button.dataset.documentTab);
+    if (button.dataset.documentTab === "pass") {
+      void loadRoutePass().catch((error) => showNotice(error.message, true));
+    }
+  });
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeDocuments();
@@ -429,6 +500,7 @@ caseForm.addEventListener("submit", (event) => {
     });
     clearParticipantApproval();
     resetPreview();
+    resetRoutePass();
     flow = {
       case_id: item.case_id,
       kind: values.kind,
@@ -452,6 +524,7 @@ document.querySelector("#slot-form").addEventListener("submit", (event) => {
       `/api/v1/cases/${encodeURIComponent(caseID)}/route-slots`,
       { method: "POST", body: JSON.stringify(body) },
     );
+    resetRoutePass();
     flow = {
       ...flow,
       route_slot_id: item.route_slot_id,
@@ -505,7 +578,8 @@ document
         "Подтверждение записано.",
         `Маршрут готов: ${result.ready ? "да" : "нет"}`,
       ]);
-      showNotice(result.ready ? "Маршрут отмечен как готовый. Владелец может обновить статус дела." : "Подтверждение записано. Маршрут пока не готов.");
+      showNotice(result.ready ? "Маршрут отмечен как готовый. Владелец может выпустить пропуск." : "Подтверждение записано. Маршрут пока не готов.");
+      void loadRoutePass().catch((error) => showNotice(error.message, true));
     });
   });
 
@@ -540,6 +614,40 @@ document
   .querySelector("#continue-slot")
   .addEventListener("click", () => showDocumentPane("slot"));
 document.querySelector("#continue-preview").addEventListener("click", () => showDocumentPane("preview"));
+
+document.querySelector("#continue-pass").addEventListener("click", () => {
+  showDocumentPane("pass");
+  void loadRoutePass().catch((error) => showNotice(error.message, true));
+});
+document.querySelector("#refresh-pass").addEventListener("click", async () => {
+  const button = document.querySelector("#refresh-pass");
+  button.disabled = true;
+  try {
+    await loadRoutePass();
+  } catch (error) {
+    showNotice(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+document.querySelector("#issue-pass").addEventListener("click", async () => {
+  const button = document.querySelector("#issue-pass");
+  const slotID = activeSlotID();
+  if (!slotID || participantApproval || !flow.case_id) return;
+  button.disabled = true;
+  try {
+    const state = await request(`/api/v1/route-slots/${encodeURIComponent(slotID)}/pass`, { method: "POST" });
+    if (slotID !== activeSlotID()) return;
+    currentPassState = state;
+    refreshFlow();
+    showDocumentPane("pass");
+    showNotice("Пропуск выпущен. Назначенные участники могут скачать его по своим ссылкам.");
+  } catch (error) {
+    showNotice(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function resetPreview() {
   if (previewURL) URL.revokeObjectURL(previewURL);
@@ -611,6 +719,7 @@ document.querySelector("#render-preview-button").addEventListener("click", async
 });
 document.querySelector("#new-case-button").addEventListener("click", () => {
   resetPreview();
+  resetRoutePass();
   flow = {};
   currentSlotStatus = null;
   saveFlow();
@@ -669,6 +778,7 @@ async function restoreSession() {
     const approvalDetails = document.querySelector(".approval-details");
     approvalDetails.open = true;
     openDocuments();
+    void loadRoutePass().catch((error) => showNotice(error.message, true));
   }
   if (participantApprovalError) {
     showNotice("Ссылка для подтверждения неполная или некорректная.", true);

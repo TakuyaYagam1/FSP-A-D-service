@@ -237,8 +237,8 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
 .document-pin-heading h2 { font-size: 20px; }
 .document-pin-heading > span { color: #999c94; font: 8px monospace; }
 .document-route { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
-.document-pin-state { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 16px; }
-.document-pin-state span { display: grid; gap: 4px; padding: 8px 5px; border-top: 2px solid #d5d7cf; color: #9a9d95; font-size: 8px; }
+.document-pin-state { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-top: 16px; }
+.document-pin-state span { display: grid; gap: 4px; min-width: 0; padding: 8px 3px; border-top: 2px solid #d5d7cf; color: #626b65; font-size: 8px; overflow-wrap: anywhere; }
 .document-pin-state span b { font: 8px monospace; }
 .document-pin-state span.active { border-top-color: var(--green); color: var(--green-dark); font-weight: 750; }
 .document-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 15px 0 0; padding: 13px 0; border-top: 1px solid var(--line); }
@@ -272,7 +272,7 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
 .drawer-header h2 { font-size: 27px; }
 .drawer-close { width: 34px; height: 34px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; }
 .drawer-close:hover { border-color: var(--red); color: var(--red); }
-.document-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); background: #f0efe7; }
+.document-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--line); background: #f0efe7; }
 .document-tabs button { min-height: 46px; border: 0; border-right: 1px solid var(--line); border-bottom: 2px solid transparent; background: transparent; color: #92968e; cursor: pointer; font-size: 9px; font-weight: 750; }
 .document-tabs button:last-child { border-right: 0; }
 .document-tabs button.active { border-bottom-color: var(--green); background: var(--card); color: var(--green-dark); }
@@ -362,7 +362,7 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
 .drawer-form label { font-size: 13px; }
 .drawer-form input, .drawer-form select { font-size: 14px; min-height: 44px; }
 .drawer-form .form-help { margin: -7px 0 0; }
-.document-tabs button { font-size: 12px; color: #435550; }
+.document-tabs button { min-width: 0; min-height: 56px; padding: 5px 3px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; color: #435550; }
 .document-tabs button:disabled { color: #626b65; cursor: not-allowed; background: #e5e6df; }
 .button:disabled { opacity: .6; cursor: not-allowed; }
 .approval-details { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -378,6 +378,10 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
 .link-notice { min-height: 18px; margin: 10px 0 0; color: var(--green-dark); font-size: 11px; line-height: 1.5; }
 .link-notice.error { color: var(--red); }
 .new-case { margin-top: 28px; width: 100%; }
+.pass-actions { display: grid; gap: 10px; margin: 15px 0; }
+.pass-actions .button, #continue-pass { width: 100%; min-height: 46px; }
+#continue-pass { margin: 8px 0 12px; }
+#pass-issued-at { margin-top: 16px; overflow-wrap: anywhere; }
 .preview-output { display: grid; gap: 14px; margin-top: 16px; }
 .preview-output[hidden] { display: none; }
 .preview-output img { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
