@@ -1,10 +1,11 @@
-.PHONY: build test generate generate-check migrate-up migrate-down
+.PHONY: build install-deps generate generate-check migrate-up migrate-down
 
 build:
 	go build -buildvcs=false ./...
 
-test:
-	go test ./...
+install-deps:
+	go mod download
+	go install tool
 
 generate:
 	go tool ogen -clean -package api -target internal/adapter/primary/http/api -config codegen/ogen.yml api/openapi.yml

@@ -6,6 +6,13 @@ handwritten source-of-truth, поэтому V3 включает перегене
 Для сценариев согласования подготовлены учетные записи `carrier` / `carrier` и
 `inspector` / `inspector`.
 
+Для `make generate` на хосте нужны `make`, Go 1.27+ и доступ к Go-модулям.
+Команда `make install-deps` скачает зависимости и установит версии `ogen`,
+`sqlc` и Wire из `backend/go.mod`. Для сборки через Docker Go на хосте не нужен.
+
+Список команд и их назначение: `make help`. Для подсказок с описаниями в fish
+запустите из этой директории `source ../completions/make.fish`.
+
 ## Сравнение с уязвимой версией
 
 Patch V1-V10 сохранен в [`wahrwelt.diff`](wahrwelt.diff). В него входят только

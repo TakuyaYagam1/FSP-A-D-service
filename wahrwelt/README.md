@@ -41,6 +41,14 @@ Wahrwelt - логистическая система контроля экспо
 через `ogen`, PostgreSQL queries - через `sqlc`, compile-time DI - через Wire.
 Goose применяет migrations автоматически при запуске backend.
 
+Для `make generate` на хосте нужны `make`, Go 1.27+ и доступ к Go-модулям.
+Перед генерацией запустите `make install-deps`: команда скачает зависимости и
+установит версии `ogen`, `sqlc` и Wire из `backend/go.mod`. Для запуска через
+`make prepare` Go на хосте не нужен: backend собирается внутри Docker.
+
+Список команд и их назначение: `make help`. Для подсказок с описаниями в fish
+запустите из этой директории `source ../completions/make.fish`.
+
 Следующие файлы и каталоги считаются частью фиксированного контракта сервиса,
 изменять их не нужно, считайте, что они уже source of truth:
 
