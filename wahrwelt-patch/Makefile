@@ -2,7 +2,7 @@ COMPOSE ?= docker compose
 
 .PHONY: build install-deps generate generate-check migrate-up migrate-down \
 	images prepare up down compose-up compose-down \
-	backend frontend renderer render postgres redis restart-all rebuild-all status logs help
+	backend frontend renderer postgres redis restart-all rebuild-all status logs help
 
 build: ## Собрать Go backend на хосте
 	$(MAKE) -C backend $@
@@ -48,8 +48,6 @@ frontend: ## Пересобрать и перезапустить frontend
 renderer: ## Пересобрать и перезапустить renderer
 	$(COMPOSE) build renderer
 	$(COMPOSE) up -d --no-deps --no-build --pull never --force-recreate --wait renderer
-
-render: renderer ## Короткое имя для renderer
 
 postgres: ## Обновить и перезапустить PostgreSQL
 	$(COMPOSE) pull postgres

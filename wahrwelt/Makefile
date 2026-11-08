@@ -2,7 +2,7 @@ COMPOSE ?= docker compose
 
 .PHONY: build install-deps generate generate-check migrate-up migrate-down \
 	images prepare up down \
-	backend frontend renderer render postgres redis restart-all rebuild-all status logs help
+	backend frontend renderer postgres redis restart-all rebuild-all status logs help
 
 build: ## Собрать Go backend на хосте
 	$(MAKE) -C backend $@
@@ -18,7 +18,7 @@ generate-check: ## Проверить актуальность сгенерир�
 
 migrate-up: ## Применить миграции PostgreSQL
 	$(MAKE) -C backend $@
-
+render           Короткое имя для renderer
 migrate-down: ## Откатить миграции PostgreSQL
 	$(MAKE) -C backend $@
 
@@ -49,8 +49,6 @@ renderer: ## Пересобрать и перезапустить renderer
 	$(COMPOSE) build renderer
 	$(COMPOSE) up -d --no-deps --no-build --pull never --force-recreate --wait renderer
 
-render: renderer ## Короткое имя для renderer
-
 postgres: ## Обновить и перезапустить PostgreSQL
 	$(COMPOSE) pull postgres
 	$(COMPOSE) up -d --no-deps --no-build --pull never --force-recreate --wait postgres
@@ -75,4 +73,3 @@ logs: ## Показать последние строки логов
 
 help: ## Показать описание команд
 	@awk '/^[a-z][a-z0-9-]*:.*##[[:space:]]*/ { target = $$0; sub(/:.*/, "", target); description = $$0; sub(/^.*##[[:space:]]*/, "", description); printf "%-16s %s\n", target, description }' $(MAKEFILE_LIST)
-
