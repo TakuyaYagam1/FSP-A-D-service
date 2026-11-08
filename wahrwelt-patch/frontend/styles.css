@@ -354,7 +354,6 @@ button.city-node:hover .city-dot, .city-node.active .city-dot { border-color: va
   .city-kursk, .city-voronezh { top: 58%; }
 }
 
-/* Document workflow */
 .form-help { margin: 0 0 16px; color: #435550; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 .drawer-header .form-help { margin: 8px 0 0; max-width: 31ch; }
 .drawer-header > div { min-width: 0; }

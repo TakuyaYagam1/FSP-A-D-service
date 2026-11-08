@@ -59,7 +59,6 @@ function currentApprovalRole() {
 }
 
 function saveFlow() {
-  // Keep only document references; the private code stays on the server.
   try {
     sessionStorage.setItem(
       `wahrwelt.flow.${currentUsername}`,
