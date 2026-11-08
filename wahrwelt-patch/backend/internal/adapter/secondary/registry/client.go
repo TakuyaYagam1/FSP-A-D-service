@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
 )
 
 const maxResponseBytes = 1 << 20
@@ -58,7 +60,7 @@ func NewClient() *Client {
 func (c *Client) Get(ctx context.Context, target string) (string, error) {
 	parsed, err := url.ParseRequestURI(strings.TrimSpace(target))
 	if err != nil {
-		return "", fmt.Errorf("invalid registry URL")
+		return "", invalidTarget("invalid registry URL")
 	}
 	state := &dialState{addresses: make(map[string][]net.IP)}
 	ctx = context.WithValue(ctx, dialStateKey{}, state)
@@ -92,7 +94,7 @@ func (c *Client) Get(ctx context.Context, target string) (string, error) {
 
 func (c *Client) checkRedirect(request *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
-		return fmt.Errorf("too many registry redirects")
+		return invalidTarget("too many registry redirects")
 	}
 	state, ok := request.Context().Value(dialStateKey{}).(*dialState)
 	if !ok {
@@ -104,17 +106,17 @@ func (c *Client) checkRedirect(request *http.Request, via []*http.Request) error
 
 func (c *Client) resolveAndPin(ctx context.Context, target *url.URL, state *dialState) error {
 	if target == nil || target.User != nil || target.Opaque != "" || target.Fragment != "" {
-		return fmt.Errorf("invalid registry URL")
+		return invalidTarget("invalid registry URL")
 	}
 	scheme := strings.ToLower(target.Scheme)
 	switch scheme {
 	case "http", "https":
 	default:
-		return fmt.Errorf("invalid registry URL")
+		return invalidTarget("invalid registry URL")
 	}
 	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
 	if host == "" || strings.Contains(host, "%") {
-		return fmt.Errorf("invalid registry URL")
+		return invalidTarget("invalid registry URL")
 	}
 	port := target.Port()
 	if port == "" {
@@ -126,7 +128,7 @@ func (c *Client) resolveAndPin(ctx context.Context, target *url.URL, state *dial
 	}
 	portNumber, err := strconv.Atoi(port)
 	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return fmt.Errorf("invalid registry URL")
+		return invalidTarget("invalid registry URL")
 	}
 
 	var resolved []net.IPAddr
@@ -139,23 +141,23 @@ func (c *Client) resolveAndPin(ctx context.Context, target *url.URL, state *dial
 		}
 	}
 	if len(resolved) == 0 {
-		return fmt.Errorf("registry address has no IP addresses")
+		return invalidTarget("registry address has no IP addresses")
 	}
 
 	addresses := make([]net.IP, 0, len(resolved))
 	seen := make(map[string]struct{}, len(resolved))
 	for _, item := range resolved {
 		if item.Zone != "" {
-			return fmt.Errorf("registry address is not public")
+			return invalidTarget("registry address is not public")
 		}
 		address, ok := netip.AddrFromSlice(item.IP)
 		if !ok {
-			return fmt.Errorf("registry address is invalid")
+			return invalidTarget("registry address is invalid")
 		}
 		address = address.Unmap()
 		// Смешанный ответ DNS отклоняется целиком, чтобы повторное соединение не выбрало частный адрес
 		if !address.IsGlobalUnicast() || address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() || address.IsMulticast() {
-			return fmt.Errorf("registry address is not public")
+			return invalidTarget("registry address is not public")
 		}
 		canonical := address.String()
 		if _, ok := seen[canonical]; ok {
@@ -171,6 +173,10 @@ func (c *Client) resolveAndPin(ctx context.Context, target *url.URL, state *dial
 	state.addresses[key] = addresses
 	state.mu.Unlock()
 	return nil
+}
+
+func invalidTarget(detail string) error {
+	return fmt.Errorf("%w: %s", domain.ErrInvalidInput, detail)
 }
 
 func (c *Client) dialPinned(ctx context.Context, network, endpoint string) (net.Conn, error) {

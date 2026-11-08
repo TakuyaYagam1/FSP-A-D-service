@@ -17,14 +17,13 @@ index 668cda7..b0bd67c 100644
  		if errors.Is(err, domain.ErrNotFound) {
 
 
-
 # V2 - SSRF проверки сертификата
 
 diff --git a/wahrwelt/backend/internal/adapter/secondary/registry/client.go b/wahrwelt-patch/backend/internal/adapter/secondary/registry/client.go
-index a93b3dd..52f4d16 100644
+index a93b3dd..e157790 100644
 --- a/wahrwelt/backend/internal/adapter/secondary/registry/client.go
 +++ b/wahrwelt-patch/backend/internal/adapter/secondary/registry/client.go
-@@ -4,33 +4,76 @@ import (
+@@ -4,26 +4,68 @@ import (
  	"context"
  	"fmt"
  	"io"
@@ -36,11 +35,13 @@ index a93b3dd..52f4d16 100644
  	"strings"
 +	"sync"
  	"time"
++
++	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
  )
-
+ 
  const maxResponseBytes = 1 << 20
 +const maxRedirects = 5
-
+ 
  type Client struct {
 -	http *http.Client
 +	http     *http.Client
@@ -54,7 +55,7 @@ index a93b3dd..52f4d16 100644
 +	mu        sync.RWMutex
 +	addresses map[string][]net.IP
  }
-
+ 
  func NewClient() *Client {
 -	return &Client{http: &http.Client{Timeout: 5 * time.Second}}
 +	client := &Client{
@@ -80,21 +81,22 @@ index a93b3dd..52f4d16 100644
 +	}
 +	return client
  }
-
+ 
  func (c *Client) Get(ctx context.Context, target string) (string, error) {
  	parsed, err := url.ParseRequestURI(strings.TrimSpace(target))
 -	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+-		return "", fmt.Errorf("invalid registry URL")
 +	if err != nil {
- 		return "", fmt.Errorf("invalid registry URL")
- 	}
++		return "", invalidTarget("invalid registry URL")
++	}
 +	state := &dialState{addresses: make(map[string][]net.IP)}
 +	ctx = context.WithValue(ctx, dialStateKey{}, state)
 +	if err := c.resolveAndPin(ctx, parsed, state); err != nil {
 +		return "", err
-+	}
+ 	}
  	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
  	if err != nil {
- 		return "", fmt.Errorf("create registry request: %w", err)
+@@ -31,6 +73,9 @@ func (c *Client) Get(ctx context.Context, target string) (string, error) {
  	}
  	response, err := c.http.Do(request)
  	if err != nil {
@@ -104,14 +106,14 @@ index a93b3dd..52f4d16 100644
  		return "", fmt.Errorf("request registry: %w", err)
  	}
  	body, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
-@@ -46,3 +89,113 @@ func (c *Client) Get(ctx context.Context, target string) (string, error) {
+@@ -46,3 +91,117 @@ func (c *Client) Get(ctx context.Context, target string) (string, error) {
  	}
  	return string(body), nil
  }
 +
 +func (c *Client) checkRedirect(request *http.Request, via []*http.Request) error {
 +	if len(via) >= maxRedirects {
-+		return fmt.Errorf("too many registry redirects")
++		return invalidTarget("too many registry redirects")
 +	}
 +	state, ok := request.Context().Value(dialStateKey{}).(*dialState)
 +	if !ok {
@@ -123,17 +125,17 @@ index a93b3dd..52f4d16 100644
 +
 +func (c *Client) resolveAndPin(ctx context.Context, target *url.URL, state *dialState) error {
 +	if target == nil || target.User != nil || target.Opaque != "" || target.Fragment != "" {
-+		return fmt.Errorf("invalid registry URL")
++		return invalidTarget("invalid registry URL")
 +	}
 +	scheme := strings.ToLower(target.Scheme)
 +	switch scheme {
 +	case "http", "https":
 +	default:
-+		return fmt.Errorf("invalid registry URL")
++		return invalidTarget("invalid registry URL")
 +	}
 +	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
 +	if host == "" || strings.Contains(host, "%") {
-+		return fmt.Errorf("invalid registry URL")
++		return invalidTarget("invalid registry URL")
 +	}
 +	port := target.Port()
 +	if port == "" {
@@ -145,7 +147,7 @@ index a93b3dd..52f4d16 100644
 +	}
 +	portNumber, err := strconv.Atoi(port)
 +	if err != nil || portNumber < 1 || portNumber > 65535 {
-+		return fmt.Errorf("invalid registry URL")
++		return invalidTarget("invalid registry URL")
 +	}
 +
 +	var resolved []net.IPAddr
@@ -158,23 +160,23 @@ index a93b3dd..52f4d16 100644
 +		}
 +	}
 +	if len(resolved) == 0 {
-+		return fmt.Errorf("registry address has no IP addresses")
++		return invalidTarget("registry address has no IP addresses")
 +	}
 +
 +	addresses := make([]net.IP, 0, len(resolved))
 +	seen := make(map[string]struct{}, len(resolved))
 +	for _, item := range resolved {
 +		if item.Zone != "" {
-+			return fmt.Errorf("registry address is not public")
++			return invalidTarget("registry address is not public")
 +		}
 +		address, ok := netip.AddrFromSlice(item.IP)
 +		if !ok {
-+			return fmt.Errorf("registry address is invalid")
++			return invalidTarget("registry address is invalid")
 +		}
 +		address = address.Unmap()
 +		// Смешанный ответ DNS отклоняется целиком, чтобы повторное соединение не выбрало частный адрес
 +		if !address.IsGlobalUnicast() || address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() || address.IsMulticast() {
-+			return fmt.Errorf("registry address is not public")
++			return invalidTarget("registry address is not public")
 +		}
 +		canonical := address.String()
 +		if _, ok := seen[canonical]; ok {
@@ -190,6 +192,10 @@ index a93b3dd..52f4d16 100644
 +	state.addresses[key] = addresses
 +	state.mu.Unlock()
 +	return nil
++}
++
++func invalidTarget(detail string) error {
++	return fmt.Errorf("%w: %s", domain.ErrInvalidInput, detail)
 +}
 +
 +func (c *Client) dialPinned(ctx context.Context, network, endpoint string) (net.Conn, error) {
@@ -220,17 +226,16 @@ index a93b3dd..52f4d16 100644
 +}
 
 
-
 # V3 - SQL injection поиска счетов
 
 diff --git a/wahrwelt/backend/db/queries/invoice.sql b/wahrwelt-patch/backend/db/queries/invoice.sql
-index e0d8b58..39a2972 100644
+index e0d8b58..66afb2c 100644
 --- a/wahrwelt/backend/db/queries/invoice.sql
 +++ b/wahrwelt-patch/backend/db/queries/invoice.sql
-@@ -18,3 +18,14 @@ FROM
+@@ -18,3 +18,13 @@ FROM
  WHERE
      invoice_number = @invoice_number;
-
+ 
 +-- name: SearchInvoices :many
 +SELECT
 +    invoice_number,
@@ -241,7 +246,7 @@ index e0d8b58..39a2972 100644
 +WHERE
 +    owner_id = @owner_id
 +    AND invoice_number ILIKE @pattern;
-+
+
 diff --git a/wahrwelt/backend/internal/adapter/secondary/postgres/invoice.go b/wahrwelt-patch/backend/internal/adapter/secondary/postgres/invoice.go
 index 22722c7..0c2f277 100644
 --- a/wahrwelt/backend/internal/adapter/secondary/postgres/invoice.go
@@ -249,7 +254,7 @@ index 22722c7..0c2f277 100644
 @@ -40,22 +40,21 @@ func (s *Store) SearchInvoices(ctx context.Context, ownerID uuid.UUID, value str
  	}
  	defer func() { _ = tx.Rollback(ctx) }()
-
+ 
 -	query := "SELECT invoice_number, amount, status FROM invoices WHERE owner_id = $1 AND invoice_number ILIKE '%" + value + "%'"
 -	rows, err := tx.Query(ctx, query, ownerID)
 +	// sqlc фиксирует структуру запроса, а строка поиска передается отдельным параметром
@@ -283,7 +288,6 @@ index 22722c7..0c2f277 100644
  		return nil, fmt.Errorf("finish invoice search: %w", err)
 
 
-
 # V4 - Mass assignment акта досмотра
 
 diff --git a/wahrwelt/backend/internal/adapter/primary/http/v1/inspection.go b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/inspection.go
@@ -291,12 +295,12 @@ index 43ea840..6bf8e73 100644
 --- a/wahrwelt/backend/internal/adapter/primary/http/v1/inspection.go
 +++ b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/inspection.go
 @@ -5,7 +5,6 @@ import (
-
+ 
  	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/api"
  	"github.com/TakuyaYagam1/wahrwelt/internal/adapter/primary/http/middleware"
 -	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
  )
-
+ 
  func (h *Handler) CreateInspection(ctx context.Context, req *api.CreateInspectionRequest) (*api.InspectionCreated, error) {
 @@ -66,12 +65,8 @@ func (h *Handler) AddInspectionComment(ctx context.Context, req *api.AddInspecti
  	if err != nil {
@@ -313,20 +317,33 @@ index 43ea840..6bf8e73 100644
  	if err != nil {
  		return nil, err
  	}
+
 diff --git a/wahrwelt/backend/internal/usecase/inspection.go b/wahrwelt-patch/backend/internal/usecase/inspection.go
-index edb16d9..f55d4df 100644
+index edb16d9..7c38ef2 100644
 --- a/wahrwelt/backend/internal/usecase/inspection.go
 +++ b/wahrwelt-patch/backend/internal/usecase/inspection.go
-@@ -91,7 +91,7 @@ func (i *Inspection) PrivateNote(ctx context.Context, actorID uuid.UUID, number
+@@ -6,9 +6,10 @@ import (
+ 	"strings"
+ 	"time"
+ 
++	"uuid"
++
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
+-	"uuid"
+ )
+ 
+ type Inspection struct {
+@@ -91,7 +92,7 @@ func (i *Inspection) PrivateNote(ctx context.Context, actorID uuid.UUID, number
  	return item.InspectorNote, nil
  }
-
+ 
 -func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number, value string, visibility *domain.InspectionVisibility) (domain.InspectionComment, error) {
 +func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number, value string) (domain.InspectionComment, error) {
  	if actorID == (uuid.UUID{}) {
  		return domain.InspectionComment{}, domain.ErrUnauthorized
  	}
-@@ -99,9 +99,6 @@ func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number,
+@@ -99,9 +100,6 @@ func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number,
  	if value == "" || len(value) > 500 {
  		return domain.InspectionComment{}, domain.ErrInvalidInput
  	}
@@ -336,7 +353,7 @@ index edb16d9..f55d4df 100644
  	comment := domain.InspectionComment{
  		ID:               uuid.New(),
  		InspectionNumber: strings.TrimSpace(number),
-@@ -109,7 +106,7 @@ func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number,
+@@ -109,7 +107,7 @@ func (i *Inspection) AddComment(ctx context.Context, actorID uuid.UUID, number,
  		Text:             value,
  		CreatedAt:        time.Now().UTC(),
  	}
@@ -345,6 +362,7 @@ index edb16d9..f55d4df 100644
  	if err != nil {
  		return domain.InspectionComment{}, fmt.Errorf("add inspection comment: %w", err)
  	}
+
 diff --git a/wahrwelt/backend/internal/port/outbound/inspection.go b/wahrwelt-patch/backend/internal/port/outbound/inspection.go
 index 6c27539..8438ae2 100644
 --- a/wahrwelt/backend/internal/port/outbound/inspection.go
@@ -356,6 +374,7 @@ index 6c27539..8438ae2 100644
 -	AddInspectionComment(context.Context, domain.InspectionComment, *domain.InspectionVisibility) (domain.InspectionComment, error)
 +	AddInspectionComment(context.Context, domain.InspectionComment) (domain.InspectionComment, error)
  }
+
 diff --git a/wahrwelt/backend/internal/adapter/secondary/postgres/inspection.go b/wahrwelt-patch/backend/internal/adapter/secondary/postgres/inspection.go
 index 7385ef0..e4a88e2 100644
 --- a/wahrwelt/backend/internal/adapter/secondary/postgres/inspection.go
@@ -363,7 +382,7 @@ index 7385ef0..e4a88e2 100644
 @@ -51,7 +51,7 @@ func (s *Store) ListInspectionComments(ctx context.Context, inspectionID uuid.UU
  	return result, nil
  }
-
+ 
 -func (s *Store) AddInspectionComment(ctx context.Context, comment domain.InspectionComment, visibility *domain.InspectionVisibility) (domain.InspectionComment, error) {
 +func (s *Store) AddInspectionComment(ctx context.Context, comment domain.InspectionComment) (domain.InspectionComment, error) {
  	tx, err := s.pool.Begin(ctx)
@@ -386,33 +405,37 @@ index 7385ef0..e4a88e2 100644
  	}
 
 
-
 # V5 - Непривязанный токен лицензии
 
 diff --git a/wahrwelt/backend/internal/usecase/license.go b/wahrwelt-patch/backend/internal/usecase/license.go
-index 9b18de2..a4352da 100644
+index 9b18de2..197cd45 100644
 --- a/wahrwelt/backend/internal/usecase/license.go
 +++ b/wahrwelt-patch/backend/internal/usecase/license.go
 @@ -1,6 +1,7 @@
  package usecase
-
+ 
  import (
 +	"context"
  	"crypto/hmac"
  	"crypto/rand"
  	"crypto/sha256"
-@@ -10,7 +11,6 @@ import (
+@@ -10,10 +11,10 @@ import (
  	"strings"
  	"time"
-
+ 
 -	"context"
++	"uuid"
++
  	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
  	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
- 	"uuid"
-@@ -24,10 +24,13 @@ type License struct {
+-	"uuid"
+ )
+ 
+ const LicenseReadScope = "license:read"
+@@ -24,10 +25,13 @@ type License struct {
  	tokenTTL   time.Duration
  }
-
+ 
 +// Подпись фиксирует лицензию, владельца, область чтения и срок действия
  type licenseTokenPayload struct {
 -	ExpiresAt int64  `json:"exp"`
@@ -424,16 +447,16 @@ index 9b18de2..a4352da 100644
 +	Scope         string `json:"scope"`
 +	Nonce         string `json:"nonce"`
  }
-
+ 
  func NewLicense(repository outbound.LicenseRepository, secret string, tokenTTL time.Duration) *License {
-@@ -94,62 +97,88 @@ func (l *License) IssueToken(ctx context.Context, ownerID uuid.UUID, number, sco
+@@ -94,62 +98,88 @@ func (l *License) IssueToken(ctx context.Context, ownerID uuid.UUID, number, sco
  	if item.OwnerID != ownerID {
  		return domain.LicenseToken{}, domain.ErrNotFound
  	}
 -	return l.signToken(scope, time.Now().UTC().Add(l.tokenTTL).Truncate(time.Second))
 +	return l.signToken(item.Number, item.OwnerID, scope, time.Now().UTC().Add(l.tokenTTL).Truncate(time.Second))
  }
-
+ 
  func (l *License) ReadWithToken(ctx context.Context, token, number string) (domain.License, error) {
 -	if err := l.ValidateReadToken(token); err != nil {
 +	claims, err := l.parseReadToken(token)
@@ -455,7 +478,7 @@ index 9b18de2..a4352da 100644
 +	}
  	return item, nil
  }
-
+ 
  func (l *License) ValidateReadToken(token string) error {
 +	_, err := l.parseReadToken(token)
 +	return err
@@ -513,7 +536,7 @@ index 9b18de2..a4352da 100644
 -	return nil
 +	return decoded, nil
  }
-
+ 
 -func (l *License) signToken(scope string, expiresAt time.Time) (domain.LicenseToken, error) {
 +func (l *License) signToken(number string, ownerID uuid.UUID, scope string, expiresAt time.Time) (domain.LicenseToken, error) {
  	nonce := make([]byte, 16)
@@ -534,14 +557,25 @@ index 9b18de2..a4352da 100644
  	if err != nil {
 
 
-
 # V6 - Утечка через шаблон договора
 
 diff --git a/wahrwelt/backend/internal/usecase/contract.go b/wahrwelt-patch/backend/internal/usecase/contract.go
-index 6db5310..5c31656 100644
+index 6db5310..19b0025 100644
 --- a/wahrwelt/backend/internal/usecase/contract.go
 +++ b/wahrwelt-patch/backend/internal/usecase/contract.go
-@@ -97,7 +97,19 @@ func (c *Contract) Preview(ctx context.Context, number, source string) (domain.C
+@@ -9,9 +9,10 @@ import (
+ 	"text/template/parse"
+ 	"time"
+ 
++	"uuid"
++
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
+-	"uuid"
+ )
+ 
+ const (
+@@ -97,7 +98,19 @@ func (c *Contract) Preview(ctx context.Context, number, source string) (domain.C
  		return domain.ContractPreview{}, domain.ErrInvalidInput
  	}
  	output := &boundedPreviewWriter{limit: maxContractPreviewBytes}
@@ -564,32 +598,31 @@ index 6db5310..5c31656 100644
  	return domain.ContractPreview{Rendered: output.String()}, nil
 
 
-
 # V7 - Повторное согласование слота
 
 diff --git a/wahrwelt/backend/internal/domain/route_slot.go b/wahrwelt-patch/backend/internal/domain/route_slot.go
-index cafe6c7..6709876 100644
+index a1671f0..2295f49 100644
 --- a/wahrwelt/backend/internal/domain/route_slot.go
 +++ b/wahrwelt-patch/backend/internal/domain/route_slot.go
-@@ -30,11 +30,12 @@ type RouteSlot struct {
+@@ -36,11 +36,12 @@ type RouteSlotStatus struct {
  }
-
+ 
  type ApprovalState struct {
 -	Count int64
 +	CarrierID   uuid.UUID
 +	InspectorID uuid.UUID
  }
-
+ 
  func (state ApprovalState) Complete() bool {
 -	return state.Count >= 2
 +	return state.CarrierID != (uuid.UUID{}) && state.InspectorID != (uuid.UUID{})
  }
-
+ 
  type ApprovalResult struct {
-@@ -43,11 +44,11 @@ type ApprovalResult struct {
+@@ -49,11 +50,11 @@ type ApprovalResult struct {
  	Ready             bool
  }
-
+ 
 -func NewApprovalResult(state ApprovalState, role ApprovalRole) ApprovalResult {
 +func NewApprovalResult(state ApprovalState) ApprovalResult {
  	ready := state.Complete()
@@ -601,20 +634,22 @@ index cafe6c7..6709876 100644
  		Ready:             ready,
  	}
  }
+
 diff --git a/wahrwelt/backend/internal/port/outbound/route_slot.go b/wahrwelt-patch/backend/internal/port/outbound/route_slot.go
-index fa1c489..0dfb812 100644
+index 0c1cfac..172a915 100644
 --- a/wahrwelt/backend/internal/port/outbound/route_slot.go
 +++ b/wahrwelt-patch/backend/internal/port/outbound/route_slot.go
-@@ -14,6 +14,6 @@ type RouteSlotRepository interface {
+@@ -15,6 +15,6 @@ type RouteSlotRepository interface {
  }
-
+ 
  type ApprovalStore interface {
 -	Increment(context.Context, uuid.UUID, time.Duration) (domain.ApprovalState, error)
 +	RecordApproval(context.Context, uuid.UUID, uuid.UUID, domain.ApprovalRole, time.Duration) (domain.ApprovalState, error)
  	GetApprovals(context.Context, uuid.UUID) (domain.ApprovalState, error)
  }
+
 diff --git a/wahrwelt/backend/internal/usecase/route_slot.go b/wahrwelt-patch/backend/internal/usecase/route_slot.go
-index f473501..cc18138 100644
+index 0454a69..780caa4 100644
 --- a/wahrwelt/backend/internal/usecase/route_slot.go
 +++ b/wahrwelt-patch/backend/internal/usecase/route_slot.go
 @@ -86,11 +86,15 @@ func (s *RouteSlot) Approve(ctx context.Context, actorID, slotID uuid.UUID, role
@@ -633,9 +668,26 @@ index f473501..cc18138 100644
 +	}
 +	return domain.NewApprovalResult(state), nil
  }
-
- func (s *RouteSlot) Code(ctx context.Context, actorID, slotID uuid.UUID) (string, error) {
-@@ -114,7 +118,8 @@ func (s *RouteSlot) Code(ctx context.Context, actorID, slotID uuid.UUID) (string
+ 
+ func (s *RouteSlot) Status(ctx context.Context, actorID, slotID uuid.UUID) (domain.RouteSlotStatus, error) {
+@@ -114,8 +118,15 @@ func (s *RouteSlot) currentStatus(ctx context.Context, slot domain.RouteSlot) (d
+ 	} else if err != nil {
+ 		return domain.RouteSlotStatus{}, fmt.Errorf("read route slot approvals: %w", err)
+ 	}
++	count := int64(0)
++	if state.CarrierID != (uuid.UUID{}) && state.CarrierID == slot.CarrierID {
++		count++
++	}
++	if state.InspectorID != (uuid.UUID{}) && state.InspectorID == slot.InspectorID {
++		count++
++	}
+ 	slot.Code = ""
+-	return domain.RouteSlotStatus{Slot: slot, ApprovalCount: state.Count, Ready: state.Complete()}, nil
++	return domain.RouteSlotStatus{Slot: slot, ApprovalCount: count, Ready: count == 2}, nil
+ }
+ 
+ func (s *RouteSlot) List(ctx context.Context, actorID, caseID uuid.UUID) ([]domain.RouteSlotStatus, error) {
+@@ -168,7 +179,8 @@ func (s *RouteSlot) Code(ctx context.Context, actorID, slotID uuid.UUID) (string
  	if err != nil {
  		return "", fmt.Errorf("load route slot approvals: %w", err)
  	}
@@ -645,24 +697,28 @@ index f473501..cc18138 100644
  		return "", domain.ErrApprovalNotReady
  	}
  	return slot.Code, nil
+
 diff --git a/wahrwelt/backend/internal/adapter/secondary/redis/route_slot_approval.go b/wahrwelt-patch/backend/internal/adapter/secondary/redis/route_slot_approval.go
-index f90dbb3..8d3c93d 100644
+index f90dbb3..7083ed8 100644
 --- a/wahrwelt/backend/internal/adapter/secondary/redis/route_slot_approval.go
 +++ b/wahrwelt-patch/backend/internal/adapter/secondary/redis/route_slot_approval.go
-@@ -2,9 +2,7 @@ package redis
-
+@@ -2,56 +2,98 @@ package redis
+ 
  import (
  	"context"
 -	"errors"
  	"fmt"
 -	"strconv"
  	"time"
-
+ 
++	"uuid"
++
  	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
-@@ -13,45 +11,88 @@ import (
- 	"uuid"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
+ 	"github.com/redis/go-redis/v9"
+-	"uuid"
  )
-
+ 
 -var incrementApprovalScript = redis.NewScript(`
 -local count = redis.call("INCR", KEYS[1])
 -if count == 1 then
@@ -683,7 +739,7 @@ index f90dbb3..8d3c93d 100644
 +  redis.call("HGET", KEYS[1], "inspector") or ""
 +}
  `)
-
+ 
 -func (s *Store) Increment(ctx context.Context, slotID uuid.UUID, ttl time.Duration) (domain.ApprovalState, error) {
 -	if slotID == (uuid.UUID{}) || ttl.Milliseconds() < 1 {
 +func (s *Store) RecordApproval(ctx context.Context, slotID, actorID uuid.UUID, role domain.ApprovalRole, ttl time.Duration) (domain.ApprovalState, error) {
@@ -702,7 +758,7 @@ index f90dbb3..8d3c93d 100644
 +	}
 +	return approvalStateFromValues(values[0], values[1])
  }
-
+ 
  func (s *Store) GetApprovals(ctx context.Context, slotID uuid.UUID) (domain.ApprovalState, error) {
  	if slotID == (uuid.UUID{}) {
  		return domain.ApprovalState{}, domain.ErrInvalidInput
@@ -759,14 +815,13 @@ index f90dbb3..8d3c93d 100644
 +	}
 +	return id, nil
  }
-
+ 
  func approvalKey(slotID uuid.UUID) string {
 -	return namespace + ":approval-count:" + slotID.String()
 +	return namespace + ":approval-records:" + slotID.String()
  }
-
+ 
  var _ outbound.ApprovalStore = (*Store)(nil)
-
 
 
 # V8 - Обход allowlist полей квоты
@@ -778,7 +833,7 @@ index bead27d..7290675 100644
 @@ -16,7 +16,10 @@ type Quota struct {
  	CreatedAt time.Time
  }
-
+ 
 +// Сводка содержит только открытые значения и не несет quota_code
  type QuotaSummary struct {
 -	Quota  Quota
@@ -788,11 +843,24 @@ index bead27d..7290675 100644
 +	ExpiresAt time.Time
 +	Fields    []string
  }
+
 diff --git a/wahrwelt/backend/internal/usecase/quota.go b/wahrwelt-patch/backend/internal/usecase/quota.go
-index 0ea9017..c10da3d 100644
+index 0ea9017..e35574f 100644
 --- a/wahrwelt/backend/internal/usecase/quota.go
 +++ b/wahrwelt-patch/backend/internal/usecase/quota.go
-@@ -74,7 +74,19 @@ func (q *Quota) Summary(ctx context.Context, number, rawFields string) (domain.Q
+@@ -6,9 +6,10 @@ import (
+ 	"strings"
+ 	"time"
+ 
++	"uuid"
++
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
+-	"uuid"
+ )
+ 
+ const (
+@@ -74,7 +75,19 @@ func (q *Quota) Summary(ctx context.Context, number, rawFields string) (domain.Q
  	if err != nil {
  		return domain.QuotaSummary{}, fmt.Errorf("get quota summary: %w", err)
  	}
@@ -811,9 +879,9 @@ index 0ea9017..c10da3d 100644
 +	}
 +	return summary, nil
  }
-
+ 
  func selectQuotaFields(raw string) ([]string, error) {
-@@ -91,11 +103,12 @@ func selectQuotaFields(raw string) ([]string, error) {
+@@ -91,11 +104,12 @@ func selectQuotaFields(raw string) ([]string, error) {
  	fields := make([]string, 0, len(identifiers))
  	seen := make(map[string]struct{}, len(identifiers))
  	for _, identifier := range identifiers {
@@ -829,6 +897,7 @@ index 0ea9017..c10da3d 100644
  			return nil, domain.ErrInvalidInput
  		}
  		if _, exists := seen[field]; exists {
+
 diff --git a/wahrwelt/backend/internal/adapter/primary/http/v1/quota.go b/wahrwelt-patch/backend/internal/adapter/primary/http/v1/quota.go
 index e022d64..477b75c 100644
 --- a/wahrwelt/backend/internal/adapter/primary/http/v1/quota.go
@@ -856,27 +925,36 @@ index e022d64..477b75c 100644
  	return response, nil
 
 
-
 # V9 - Ghostscript CVE-2024-29510
 
 diff --git a/wahrwelt/renderer/Dockerfile b/wahrwelt-patch/renderer/Dockerfile
-index aacaafb..d6d8544 100644
+index e3abee1..441e344 100644
 --- a/wahrwelt/renderer/Dockerfile
 +++ b/wahrwelt-patch/renderer/Dockerfile
-@@ -3,8 +3,10 @@ FROM gcc:13-bookworm@sha256:20eec427045c47d0aad1bd28c81d435916c327cd992240aa7835
- ARG HTTP_PROXY
+@@ -4,14 +4,18 @@ ARG HTTP_PROXY
  ARG HTTPS_PROXY
  ARG NO_PROXY
--RUN curl --fail --location --retry 2 --output /tmp/ghostscript-10.03.0.tar.xz https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10030/ghostscript-10.03.0.tar.xz && echo 'f25ff491a726d883f0b0f9c8af9b895c674cf77cddd814aa3824b3223f439ee5  /tmp/ghostscript-10.03.0.tar.xz' | sha256sum -c - && tar -xf /tmp/ghostscript-10.03.0.tar.xz -C /tmp
+ 
++# Для V9 достаточно минимального обновления Ghostscript до 10.03.1:
++# этот патч-релиз закрывает CVE-2024-29510 и сохраняет проверенный сценарий EPS -> PNG
++# Архив закреплен SHA-512 из релиза Artifex
++# https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/tag/gs10031/SHA512SUMS
+ RUN curl --fail --location --retry 2 \
+-        --output /tmp/ghostscript-10.03.0.tar.xz \
+-        https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10030/ghostscript-10.03.0.tar.xz \
+-    && echo '74d7da586eefbf3fb3c085bb4d2b73ee667fd0ae9cff73ece613c77c443148b847086f91802124baf91ac35cdc83be07199799378def92c8fbd96ced7d0ee9a8  /tmp/ghostscript-10.03.0.tar.xz' \
++        --output /tmp/ghostscript-10.03.1.tar.xz \
++        https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/ghostscript-10.03.1.tar.xz \
++    && echo '59e071cd23aed246b51317d3cccd9ccf8e1e84c4ecf9b22fb938e561eff42cec61915b0bdd96a313a3ea27750579c54ca0d0862b65edd306a621731c0063ffd3  /tmp/ghostscript-10.03.1.tar.xz' \
+         | sha512sum -c - \
+-    && tar -xf /tmp/ghostscript-10.03.0.tar.xz -C /tmp
++    && tar -xf /tmp/ghostscript-10.03.1.tar.xz -C /tmp
+ 
 -WORKDIR /tmp/ghostscript-10.03.0
-+# Версия с исправлением CVE-2024-29510 закреплена SHA-512 из релиза Artifex
-+# https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/SHA512SUMS
-+RUN curl --fail --location --retry 2 --output /tmp/ghostscript-10.03.1.tar.xz https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/ghostscript-10.03.1.tar.xz && echo '59e071cd23aed246b51317d3cccd9ccf8e1e84c4ecf9b22fb938e561eff42cec61915b0bdd96a313a3ea27750579c54ca0d0862b65edd306a621731c0063ffd3  /tmp/ghostscript-10.03.1.tar.xz' | sha512sum -c - && tar -xf /tmp/ghostscript-10.03.1.tar.xz -C /tmp
 +WORKDIR /tmp/ghostscript-10.03.1
- RUN CFLAGS='-O2 -std=gnu17 -fPIE' LDFLAGS='-pie' ./configure --prefix=/opt/ghostscript --disable-cups --disable-gtk --without-tesseract --with-drivers=PNG,uniprint && make -j2 && make install
- RUN set -eu; mkdir -p /opt/ghostscript/lib; ldd /opt/ghostscript/bin/gs > /tmp/gs-libraries; if grep -q 'not found' /tmp/gs-libraries; then cat /tmp/gs-libraries; exit 1; fi; awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) print $i }' /tmp/gs-libraries | sort -u | while IFS= read -r path; do name=${path##*/}; case "$name" in libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libresolv.so.*|libutil.so.*|libanl.so.*|ld-linux*.so.*) ;; *) cp -L "$path" "/opt/ghostscript/lib/$name" ;; esac; done
-
-
+ 
+ RUN CFLAGS='-O2 -std=gnu17 -fPIE' LDFLAGS='-pie' \
+     ./configure \
 
 
 # V10 - Доверие X-Forwarded-Role
@@ -895,14 +973,27 @@ index bc8758c..d7b9e05 100644
  	if err != nil {
  		return nil, err
  	}
+
 diff --git a/wahrwelt/backend/internal/usecase/gate_pass.go b/wahrwelt-patch/backend/internal/usecase/gate_pass.go
-index 27cd294..ab5fc97 100644
+index 27cd294..19dca43 100644
 --- a/wahrwelt/backend/internal/usecase/gate_pass.go
 +++ b/wahrwelt-patch/backend/internal/usecase/gate_pass.go
-@@ -78,16 +78,7 @@ func (g *GatePass) PublicCard(ctx context.Context, number string) (domain.GatePa
+@@ -6,9 +6,10 @@ import (
+ 	"strings"
+ 	"time"
+ 
++	"uuid"
++
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/domain"
+ 	"github.com/TakuyaYagam1/wahrwelt/internal/port/outbound"
+-	"uuid"
+ )
+ 
+ type GatePass struct {
+@@ -78,16 +79,7 @@ func (g *GatePass) PublicCard(ctx context.Context, number string) (domain.GatePa
  	return domain.GatePassCard{Number: item.Number, State: item.State}, nil
  }
-
+ 
 -func (g *GatePass) GetSealed(ctx context.Context, userID uuid.UUID, number, forwardedRole string) (domain.GatePass, error) {
 -	if userID == (uuid.UUID{}) {
 -		return domain.GatePass{}, domain.ErrUnauthorized
