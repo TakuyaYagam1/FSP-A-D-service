@@ -1,7 +1,7 @@
 services:
   postgres:
     container_name: wahrwelt-postgres
-    image: postgres:alpine
+    image: postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
     environment:
       POSTGRES_USER: wahrwelt
       POSTGRES_PASSWORD: wahrwelt
@@ -18,7 +18,7 @@ services:
 
   redis:
     container_name: wahrwelt-redis
-    image: redis:alpine
+    image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
     command: ["redis-server", "--save", "", "--appendonly", "no", "--loglevel", "warning"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

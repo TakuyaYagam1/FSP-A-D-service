@@ -45,7 +45,7 @@ RUN set -eu; \
             esac; \
         done
 
-FROM debian:12.15-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM debian:12.15-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 RUN mkdir -p /var/lib/wahrwelt/archive /var/lib/wahrwelt/preview \
     && chown -R 10001:10001 /var/lib/wahrwelt

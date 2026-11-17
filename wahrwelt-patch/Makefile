@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 
 .PHONY: build install-deps generate generate-check migrate-up migrate-down \
-	images prepare up down compose-up compose-down \
+	images prepare up down \
 	backend frontend renderer postgres redis restart-all rebuild-all status logs help
 
 build: ## Собрать Go backend на хосте
@@ -70,10 +70,6 @@ status: ## Показать состояние контейнеров
 
 logs: ## Показать последние строки логов
 	$(COMPOSE) logs --tail=100
-
-compose-up: up ## Короткое имя для up
-
-compose-down: down ## Короткое имя для down
 
 help: ## Показать описание команд
 	@awk '/^[a-z][a-z0-9-]*:.*##[[:space:]]*/ { target = $$0; sub(/:.*/, "", target); description = $$0; sub(/^.*##[[:space:]]*/, "", description); printf "%-16s %s\n", target, description }' $(MAKEFILE_LIST)

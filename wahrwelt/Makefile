@@ -18,7 +18,7 @@ generate-check: ## Проверить актуальность сгенерир�
 
 migrate-up: ## Применить миграции PostgreSQL
 	$(MAKE) -C backend $@
-render           Короткое имя для renderer
+
 migrate-down: ## Откатить миграции PostgreSQL
 	$(MAKE) -C backend $@
 
